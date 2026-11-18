@@ -638,6 +638,13 @@ class ChatTest extends IntegrationTest {
 
     var widgetFrames = ask(widget, "{\"kbId\":\"" + kb + "\",\"question\":\"年假有几天?\"}");
     assertThat(names(widgetFrames)).contains("done");
+    var requestId = UUID.randomUUID();
+    var recovered = ask(widget, "{\"kbId\":\"" + kb + "\",\"question\":\"年假有几天?\",\"clientRequestId\":\"" + requestId + "\"}");
+    assertThat(names(recovered)).contains("done");
+    mvc.perform(get("/api/chat/requests/{id}", requestId).header(HttpHeaders.AUTHORIZATION, widget))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("complete"))
+        .andExpect(jsonPath("$.answer").isString());
     var answered = last(widgetFrames).data().get("messageId").asText();
     mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/messages/{id}/feedback", answered)
             .header(HttpHeaders.AUTHORIZATION, widget).contentType("application/json").content("{\"rating\":\"down\",\"reason\":\"MISSING\"}"))

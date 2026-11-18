@@ -4,6 +4,7 @@ import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type DeletionInfo, type DocumentInfo, type Status, type VersionInfo } from "../../api/client";
 import { IndexStatusTag, type IndexStatus } from "../../components/IndexStatusTag";
 import { EmptyState, LoadingList } from "../../components/StateViews";
+import { usePollingLoad } from "../../hooks/usePollingLoad";
 import { ChunkEditor } from "./ChunkEditor";
 
 export const indexState = (s: VersionInfo["indexStatus"]): IndexStatus =>
@@ -94,14 +95,10 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
   const [watch, setWatch] = useState(0);
   const [editing, setEditing] = useState<{ doc: string; version: string; title: string }>();
   const poll = shouldPoll(docs, watch);
-  useEffect(() => {
-    if (!poll) return undefined;
-    const timer = setTimeout(() => {
-      setWatch((w) => Math.max(0, w - 1));
-      void load();
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [poll, docs, load]);
+  usePollingLoad(poll, 2000, async () => {
+    setWatch((w) => Math.max(0, w - 1));
+    await load();
+  });
 
   const act = async (fn: () => Promise<unknown>, watchAfter = false) => {
     setError(undefined);

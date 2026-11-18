@@ -1,10 +1,12 @@
 import type { ChatAction, ChatEvent, Citation } from "../features/qa/chatState";
+import { clearPending, savePending } from "./chatRecovery";
 import { toApiError, type ApiClient } from "./client";
 
 /**
  * 将 POST /api/chat 的结果送入 chat reducer。帧在此处解析并做结构检查；reducer 负责保证
- * 顺序（done 只在 validated 之后）。提前结束、格式错误的帧和 HTTP 错误都转为 error 事件。
- * 从不重试。
+ * 顺序（done 只在 validated 之后）。draft 增量追加到当前回答。
+ * 不自动重发 POST。提问前把 clientRequestId 记入 sessionStorage；流中断后按该编号 GET，
+ * 刷新页面也先查询。SSE 的 id/retry 不用于重连。
  */
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === "string";
@@ -61,6 +63,12 @@ export async function streamAnswer(
   const { signal, onConversation } = options;
   const emit = (event: ChatEvent) => dispatch({ type: "event", event });
   const clientRequestId = newRequestId();
+  savePending({
+    requestId: clientRequestId,
+    kbId: request.kbId,
+    question: request.question,
+    ...(request.conversationId ? { conversationId: request.conversationId } : {}),
+  });
   let res: Response;
   try {
     res = await client.raw("/api/chat", {
@@ -70,8 +78,10 @@ export async function streamAnswer(
       ...(signal ? { signal } : {}),
     });
   } catch {
-    if (signal?.aborted) dispatch({ type: "cancel" });
-    else emit(fail("NETWORK", "网络请求失败"));
+    if (signal?.aborted) {
+      clearPending();
+      dispatch({ type: "cancel" });
+    } else emit(fail("NETWORK", "网络请求失败"));
     return;
   }
   if (!res.ok) {
@@ -104,6 +114,8 @@ export async function streamAnswer(
     if (event.event === "validated") validated = true;
     // 与 reducer 规则一致：done 只在 validated 之后才算数，因此被拒绝的流不产生副作用。
     if (event.event === "done" && validated && event.data.conversationId) onConversation?.(event.data.conversationId);
+    if (event.event === "done" && validated) clearPending();
+    if (event.event === "error" && event.data.code !== "NETWORK") clearPending();
     if (event.event === "done" || event.event === "error") terminal = true;
   };
   try {
@@ -123,8 +135,10 @@ export async function streamAnswer(
     }
     if (!terminal) broken = fail("STREAM_INCOMPLETE", "回答未完整结束");
   } catch {
-    if (signal?.aborted) dispatch({ type: "cancel" });
-    else broken = fail("NETWORK", "连接中断");
+    if (signal?.aborted) {
+      clearPending();
+      dispatch({ type: "cancel" });
+    } else broken = fail("NETWORK", "连接中断");
   } finally {
     reader.cancel().catch(() => undefined);
   }
@@ -136,6 +150,7 @@ async function reconcile(client: ApiClient, clientRequestId: string, broken: Cha
   try {
     const outcome = await client.chatRequest(clientRequestId);
     if (outcome.status === "complete" && outcome.conversationId) {
+      clearPending();
       onConversation?.(outcome.conversationId);
       return fail("ANSWER_SAVED", "连接中断，但回答已在服务端完成，已从历史记录载入");
     }

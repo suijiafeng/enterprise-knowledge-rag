@@ -7,6 +7,7 @@ import dev.zhiku.auth.GrantLookup;
 import dev.zhiku.config.ConfigService;
 import dev.zhiku.chat.ChatModel.Message;
 import dev.zhiku.document.DocumentService;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import dev.zhiku.platform.ApiException;
 import dev.zhiku.retrieval.Retrieval.Candidate;
 import dev.zhiku.retrieval.Retrieval.Stage;
@@ -92,10 +93,17 @@ public class ChatService {
     var digest = digest(kbId, conversationId, question);
     if (repository.accept(scope.enterpriseId(), scope.userId(), clientRequestId, kbId, digest)) return;
     var existing = repository.request(scope.enterpriseId(), scope.userId(), clientRequestId).orElseThrow();
-    if (existing.digest().equals(digest)) {
-      throw new ApiException(HttpStatus.CONFLICT, "REQUEST_DUPLICATE", "This request was already accepted; look up its outcome");
+    switch (receiptOutcome(false, existing.digest(), digest)) {
+      case "duplicate" -> throw new ApiException(HttpStatus.CONFLICT, "REQUEST_DUPLICATE", "This request was already accepted; look up its outcome");
+      case "conflict" -> throw new ApiException(HttpStatus.CONFLICT, "REQUEST_CONFLICT", "This request id was used for a different question");
+      default -> throw new IllegalStateException("unexpected receipt outcome");
     }
-    throw new ApiException(HttpStatus.CONFLICT, "REQUEST_CONFLICT", "This request id was used for a different question");
+  }
+
+  /** 回执只插入一次。插入成功为 accepted；摘要相同为 duplicate；同一编号不同内容为 conflict。 */
+  static String receiptOutcome(boolean inserted, String storedDigest, String incomingDigest) {
+    if (inserted) return "accepted";
+    return storedDigest.equals(incomingDigest) ? "duplicate" : "conflict";
   }
 
   /** 释放一个从未开始流式输出的 id，使客户端可用它重试。 */
@@ -103,9 +111,14 @@ public class ChatService {
     repository.release(scope.enterpriseId(), scope.userId(), clientRequestId);
   }
 
-  public record RequestView(String status, UUID conversationId, UUID messageId, Instant acceptedAt) {}
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  public record RequestView(String status, UUID conversationId, UUID messageId, Instant acceptedAt,
+      String question, String answer, Boolean hidden) {}
 
-  /** 调用方自己请求的结果；不含回答正文，正文从历史中读取并经过来源检查。 */
+  /**
+   * 调用方自己的请求。回答正文只有在来源检查通过后才返回，供断线后直接展示；
+   * 删除或撤回的来源不返回正文。未完成时没有正文，调用方应继续查询而不是重新 POST。
+   */
   RequestView request(AccessScope scope, UUID clientRequestId) {
     var row = repository.request(scope.enterpriseId(), scope.userId(), clientRequestId).orElseThrow(ApiException::notFound);
     if (!scope.permits(scope.enterpriseId(), row.kbId(), ASK_AND_CITE)) throw ApiException.forbidden();
@@ -113,7 +126,18 @@ public class ChatService {
     if (row.messageStatus() != null) status = row.messageStatus();
     else if (row.acceptedAt().isBefore(Instant.now().minus(settings.streamTimeout()))) status = "interrupted";
     else status = "running";
-    return new RequestView(status, row.conversationId(), row.messageId(), row.acceptedAt());
+    String question = null;
+    String answer = null;
+    Boolean hidden = null;
+    if (row.messageId() != null && row.conversationId() != null) {
+      var hit = messages(scope, row.conversationId()).stream().filter(m -> m.id().equals(row.messageId())).findFirst();
+      if (hit.isPresent()) {
+        question = hit.get().question();
+        hidden = hit.get().hidden();
+        if (!hit.get().hidden()) answer = hit.get().answer();
+      }
+    }
+    return new RequestView(status, row.conversationId(), row.messageId(), row.acceptedAt(), question, answer, hidden);
   }
 
   static String digest(UUID kbId, UUID conversationId, String question) {
@@ -302,7 +326,12 @@ public class ChatService {
    * 基于已非当前版本的回答只保留问题。最多取最近三轮。
    */
   private List<MessageView> priorContext(AccessScope scope, UUID conversationId) {
-    var visible = messages(scope, conversationId).stream().filter(m -> !m.hidden() && "complete".equals(m.status())).toList();
+    return modelContext(messages(scope, conversationId));
+  }
+
+  /** 读历史和构建模型上下文共用同一套过滤：隐藏或未完成的轮次不进入模型。 */
+  static List<MessageView> modelContext(List<MessageView> history) {
+    var visible = history.stream().filter(m -> !m.hidden() && "complete".equals(m.status())).toList();
     return visible.subList(Math.max(0, visible.size() - 3), visible.size());
   }
 
@@ -484,8 +513,8 @@ public class ChatService {
     var context = repository.context(conversationId);
     var staleById = new HashMap<UUID, Boolean>();
     var ownSourcesOk = new HashMap<UUID, Boolean>();
-    sourcesByMessage.forEach((id, sources) -> ownSourcesOk.put(id, sources.stream().allMatch(s -> s.documentId() != null && !s.withdrawn()
-        && s.chunkText() != null && conversation.kbId().equals(s.kbId()))));
+    sourcesByMessage.forEach((id, sources) -> ownSourcesOk.put(id, sources.stream().allMatch(s ->
+        SourceAvailability.usable(s.documentId(), s.withdrawn(), s.chunkText(), s.kbId(), conversation.kbId()))));
     return repository.messages(conversationId).stream().map(m -> {
       if (!"complete".equals(m.status())) {
         return new MessageView(m.id(), m.question(), null, false, null, false, List.of(), m.createdAt(), null, m.status(), m.errorCode());
@@ -508,6 +537,24 @@ public class ChatService {
       var citations = sources.stream().map(s -> new CitationView(s.documentId().toString(), s.versionId().toString(), s.title(), excerpt(s.chunkText()))).toList();
       return new MessageView(m.id(), m.question(), m.answer(), false, null, stale, citations, m.createdAt(), ratings.get(m.id()), m.status(), null);
     }).toList();
+  }
+
+  public record MessagePage(List<MessageView> items, String nextCursor) {}
+
+  /**
+   * 按 (created_at, id) 向前翻页。返回的是时间上不晚于游标的一页，升序排列；
+   * nextCursor 指向本页最早的一条，下一页从它之前开始。来源过滤与 {@link #messages} 相同。
+   */
+  MessagePage page(AccessScope scope, UUID conversationId, int limit, String before) {
+    if (limit < 1 || limit > 50) throw ApiException.unprocessable("limit must be between 1 and 50");
+    var all = new ArrayList<>(messages(scope, conversationId));
+    all.sort(java.util.Comparator.comparingLong((MessageView m) -> m.createdAt().toEpochMilli()).thenComparing(MessageView::id));
+    var position = before == null || before.isBlank() ? null : ChatCursor.decode(before);
+    var end = ChatCursor.exclusiveEnd(all.stream().map(MessageView::createdAt).toList(), all.stream().map(MessageView::id).toList(), position);
+    var start = Math.max(0, end - limit);
+    var slice = all.subList(start, end);
+    var next = start > 0 && !slice.isEmpty() ? ChatCursor.encode(slice.get(0).createdAt(), slice.get(0).id()) : null;
+    return new MessagePage(slice, next);
   }
 
   /** 保留期清理：删除早于 before 的请求去重记录，最多 limit 条；返回删除数。 */

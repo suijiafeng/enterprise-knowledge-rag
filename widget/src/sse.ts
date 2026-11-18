@@ -6,7 +6,8 @@ export interface SseFrame {
 
 /**
  * 最小化的增量 SSE 解析器：支持 event/data 字段、注释及 LF/CRLF/CR 换行。
- * 有意忽略 id/retry 字段：未实现重连。
+ * 有意忽略 id/retry 字段：不用 EventSource 自动重连，避免重新 POST。
+ * 断线后按 clientRequestId 查询原请求。
  * 应传入同一个持久 TextDecoder 以 { stream: true } 解码出的文本。
  */
 export function createSseParser(maxEventChars = 1_048_576) {

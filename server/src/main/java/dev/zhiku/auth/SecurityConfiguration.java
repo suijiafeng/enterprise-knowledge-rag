@@ -54,6 +54,7 @@ public class SecurityConfiguration {
       cors.setAllowCredentials(false);
       var source = new UrlBasedCorsConfigurationSource();
       source.registerCorsConfiguration("/api/chat", cors);
+      source.registerCorsConfiguration("/api/chat/**", cors);
       source.registerCorsConfiguration("/api/messages/*/feedback", cors);
       http.cors(c -> c.configurationSource(source));
     }
@@ -64,6 +65,7 @@ public class SecurityConfiguration {
         .authorizeHttpRequests(a -> a
             .requestMatchers(HttpMethod.GET, "/api/status", "/api/example-evaluation").permitAll()
             .requestMatchers(HttpMethod.POST, "/api/chat").authenticated()
+            .requestMatchers(HttpMethod.GET, "/api/chat/requests/*").authenticated()
             .requestMatchers(HttpMethod.PUT, "/api/messages/*/feedback").authenticated()
             // Widget token 只能提问和评价自己的回答。
             .requestMatchers("/api/**").access((auth, ctx) -> new AuthorizationDecision(auth.get() instanceof JwtAuthenticationToken t

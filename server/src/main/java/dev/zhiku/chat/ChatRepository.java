@@ -62,7 +62,7 @@ class ChatRepository {
   List<MessageRow> messages(UUID conversationId) {
     return jdbc.query("SELECT id, question, answer, created_at, status, error_code FROM message WHERE conversation_id = ? ORDER BY created_at, id",
         (rs, i) -> new MessageRow(rs.getObject("id", UUID.class), rs.getString("question"), rs.getString("answer"),
-            rs.getTimestamp("created_at").toInstant(), rs.getString("status"), rs.getString("error_code")), conversationId);
+            rs.getObject("created_at", java.time.OffsetDateTime.class).toInstant(), rs.getString("status"), rs.getString("error_code")), conversationId);
   }
 
   /** 保存未完成的轮次：只存问题和结果，绝不保存草稿正文或来源。 */
@@ -117,7 +117,7 @@ class ChatRepository {
   }
 
   void linkRequest(UUID enterpriseId, UUID userId, UUID clientRequestId, UUID messageId) {
-    jdbc.update("UPDATE chat_request SET message_id = ? WHERE enterprise_id = ? AND user_id = ? AND client_request_id = ?",
+    jdbc.update("UPDATE chat_request SET message_id = ?, completed_at = now() WHERE enterprise_id = ? AND user_id = ? AND client_request_id = ?",
         messageId, enterpriseId, userId, clientRequestId);
   }
 

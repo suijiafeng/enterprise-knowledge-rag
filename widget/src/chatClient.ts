@@ -1,10 +1,11 @@
 import type { AccessTokenGetter, ChatEvent, ChatRequest, Citation } from "./contracts.js";
+import { savePending } from "./chatRecovery.js";
 import { createSseParser, type SseFrame } from "./sse.js";
 
 /**
  * 基于 fetch 的草案 SSE 契约客户端（contracts/openapi.yaml，x-sse-draft）。
- * - 每次请求获取短期 token；从不存储或记录；不自动携带 Cookie。
- * - 从不重试：重复 POST 可能造成重复的模型费用。
+ * - 每次请求获取短期 token；不存储令牌；不自动携带 Cookie。
+ * - 不自动重发 POST。提问编号写入 sessionStorage，断线后由调用方 GET 原请求。
  * - 只有 `validated` 之后的 `done` 才算完成。错误、取消、协议违规和流提前结束
  *   都会丢弃回答。`onEvent` 草稿是临时的，除非结果为完成，否则必须丢弃。
  */
@@ -12,7 +13,7 @@ export interface ChatError {
   code: string;
   message: string;
   requestId?: string;
-  /** 依赖暂时不可用时为 true：用户可稍后重新提问（不会自动重发）。 */
+  /** 依赖暂时不可用时为 true：用户可稍后重新提问。客户端不会自动重发 POST。 */
   retryable?: boolean;
 }
 
@@ -154,6 +155,13 @@ export async function streamChat(options: StreamChatOptions): Promise<ChatOutcom
 
   const headers = new Headers({ "Content-Type": "application/json", Accept: "text/event-stream" });
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  const clientRequestId = request.clientRequestId ?? newRequestId();
+  savePending({
+    requestId: clientRequestId,
+    kbId: request.kbId,
+    question: request.question,
+    ...(request.conversationId ? { conversationId: request.conversationId } : {}),
+  });
 
   let response: Response;
   try {
@@ -164,7 +172,7 @@ export async function streamChat(options: StreamChatOptions): Promise<ChatOutcom
         question: request.question,
         kbId: request.kbId,
         ...(request.conversationId ? { conversationId: request.conversationId } : {}),
-        clientRequestId: request.clientRequestId ?? newRequestId(),
+        clientRequestId,
       }),
       credentials: "omit",
       cache: "no-store",

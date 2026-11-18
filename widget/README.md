@@ -34,7 +34,7 @@ import { ZhikuWidget } from "@zhiku/widget";
 />
 ```
 
-getAccessToken 由宿主按请求获取短期、最小权限 token；不要把模型密钥或长期 token 放到前端。包内不提供 token 存储、自动重连或全局样式。生产只允许受信 HTTPS 后端。
+getAccessToken 由宿主按请求获取短期、最小权限 token；不要把模型密钥或长期 token 放到前端。包内不保存令牌，也不使用 EventSource 自动重连。未完成的提问编号（不含令牌）记在 sessionStorage，断线后 GET `/api/chat/requests/{clientRequestId}`，不重新 POST。生产只允许受信 HTTPS 后端。
 
 ## SSE 约定（临时）
 
@@ -47,7 +47,7 @@ getAccessToken 由宿主按请求获取短期、最小权限 token；不要把�
 
 metadata-only 只描述元数据检查，不能当作真实性、可溯源语义或回答正确性的保证。
 
-createSseParser 仅解析 event/data 分帧，输出字符串；不会执行 HTML、解析 JSON 或验证契约。调用 push(chunk) 输入解码后的增量文本，finish() 结束；没有空行终止的事件将丢弃。支持 LF/CRLF/CR、多行 data、注释及首字符 BOM，忽略 id/retry/未知字段。每条记录默认上限 1,048,576 个 JavaScript 字符，超过会抛错。
+createSseParser 仅解析 event/data 分帧，输出字符串；不会执行 HTML、解析 JSON 或验证契约。调用 push(chunk) 输入解码后的增量文本，finish() 结束；没有空行终止的事件将丢弃。支持 LF/CRLF/CR、多行 data、注释及首字符 BOM，忽略 id/retry/未知字段，因此不会按 SSE 的 retry 自动重连。每条记录默认上限 1,048,576 个 JavaScript 字符，超过会抛错。
 
 ## 问答客户端 streamChat
 
@@ -57,11 +57,11 @@ createSseParser 仅解析 event/data 分帧，输出字符串；不会执行 HTM
 - 检查 HTTP 状态与 `text/event-stream`；非 2xx 时仅在 JSON 错误体符合 `{code, message, requestId}` 时采用，否则返回 `HTTP_<状态码>`。
 - 持久 TextDecoder 流式解码，逐帧运行时校验 JSON；未知事件名忽略，已知事件结构不符即 `PROTOCOL` 失败。
 - 只有先 validated 后 done 才算 complete；error、取消、协议违规、流提前结束（`STREAM_INCOMPLETE`）都丢弃回答。onEvent 收到的 draft 是临时内容，结果不是 complete 时调用方必须丢弃。
-- 从不自动重试，避免重复 POST 造成重复计费。
+- 不自动重发 POST，避免重复计费。每次提问带上 clientRequestId；断线后查询该编号，不重新提交问题。
 
 ZhikuWidget 按设计稿第 12 页实现：右下角悬浮按钮，展开为 380×620 面板（手机全屏）；问候语与快捷问题；回答中的 [n] 点击展开来源卡；赞/踩（踩需选原因）通过 rateMessage 同步到管理端"问答记录"；themeColor 只接受 #rgb/#rrggbb，否则回退默认蓝。样式以内嵌 <style> 提供，所有选择器以 .zhiku- 开头，不影响宿主页面。会话只保存在组件内存中。不提供匿名提问（首版采用受控身份）。
 
-ZhikuWidget 使用 streamChat：发送时才调用 getAccessToken，流式显示草稿，只有 complete 才保留回答和来源；取消或失败即丢弃。组件不读写 localStorage/sessionStorage/Cookie。
+ZhikuWidget 使用 streamChat：发送时才调用 getAccessToken，流式把 draft 追加到当前回答，只有 complete 才保留回答和来源；取消或失败即丢弃当前草稿。组件不写 localStorage、Cookie 或令牌。sessionStorage 只保存待确认的 requestId 和问题；刷新后先 GET 原请求，查到可见回答就显示一次。
 
 ## 宿主接入
 
@@ -75,4 +75,4 @@ ZhikuWidget 使用 streamChat：发送时才调用 getAccessToken，流式显示
 
 编码规则统一见仓库根 AGENTS.md 和 docs/conventions.md。
 
-SSE 分帧语义参考 [WHATWG HTML Standard](https://html.spec.whatwg.org/multipage/server-sent-events.html#parsing-an-event-stream)。本包仅实现上文声明的子集，不包含 EventSource 自动重连行为。
+SSE 分帧语义参考 [WHATWG HTML Standard](https://html.spec.whatwg.org/multipage/server-sent-events.html#parsing-an-event-stream)。本包只解析 event/data，不实现 EventSource 自动重连；恢复靠 requestId 查询。

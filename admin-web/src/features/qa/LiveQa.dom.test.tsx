@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient, Conversation, HistoryMessage } from "../../api/client";
+import { savePending } from "../../api/chatRecovery";
 import { LiveQa } from "./LiveQa";
 
 function clientWith(overrides: Partial<ApiClient> = {}): ApiClient {
@@ -13,7 +14,10 @@ function clientWith(overrides: Partial<ApiClient> = {}): ApiClient {
     ...overrides,
   } as unknown as ApiClient;
 }
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  sessionStorage.clear();
+});
 
 const conversation: Conversation = { id: "conv", kbId: "kb", title: "虚构会话", updatedAt: "2030-01-01T00:00:00Z" };
 const answered: HistoryMessage = {
@@ -113,5 +117,42 @@ describe("conversation switching", () => {
     resolve([answered]);
     expect(await screen.findByText("暂无问答记录")).toBeTruthy();
     expect(screen.queryByText("中性回答")).toBeNull();
+  });
+});
+
+describe("request recovery", () => {
+  it("reloads the saved answer by request id and does not post again", async () => {
+    savePending({ requestId: "11111111-1111-4111-8111-111111111111", kbId: "kb", question: "虚构问题" });
+    const raw = vi.fn(() => { throw new Error("must not resend"); });
+    const chatRequest = vi.fn(async () => ({
+      status: "complete", conversationId: "conv", messageId: "m1", acceptedAt: "2030-01-01T00:00:00Z",
+      question: "虚构问题", answer: "中性回答",
+    }));
+    render(<LiveQa client={clientWith({
+      raw, chatRequest,
+      conversations: vi.fn(async () => [conversation]),
+      messages: vi.fn(async () => [answered]),
+    })} kbId="kb" modelEnabled />);
+    expect(await screen.findByText("已按原请求编号恢复，没有重新发送。")).toBeTruthy();
+    expect(await screen.findByText("中性回答")).toBeTruthy();
+    expect(raw).not.toHaveBeenCalled();
+    expect(chatRequest).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111");
+  });
+
+  it("pages history with a cursor and keeps both pages", async () => {
+    const earlier: HistoryMessage = { ...answered, id: "m0", question: "更早的问题", answer: "更早的回答" };
+    const messagePage = vi.fn(async (_id: string, query?: { before?: string }) => query?.before
+      ? { items: [earlier], nextCursor: null }
+      : { items: [answered], nextCursor: "cursor-1" });
+    render(<LiveQa client={clientWith({
+      conversations: vi.fn(async () => [conversation]),
+      messagePage,
+    })} kbId="kb" modelEnabled />);
+    fireEvent.click(await screen.findByText("虚构会话"));
+    await screen.findByText("中性回答");
+    fireEvent.click(screen.getByRole("button", { name: "更早的问答" }));
+    expect(await screen.findByText("更早的回答")).toBeTruthy();
+    expect(screen.getByText("中性回答")).toBeTruthy();
+    expect(messagePage).toHaveBeenLastCalledWith("conv", { limit: 2, before: "cursor-1" });
   });
 });
