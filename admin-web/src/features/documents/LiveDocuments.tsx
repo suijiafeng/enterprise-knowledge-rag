@@ -4,6 +4,7 @@ import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type DeletionInfo, type DocumentInfo, type Status, type VersionInfo } from "../../api/client";
 import { IndexStatusTag, type IndexStatus } from "../../components/IndexStatusTag";
 import { EmptyState, LoadingList } from "../../components/StateViews";
+import { ChunkEditor } from "./ChunkEditor";
 
 export const indexState = (s: VersionInfo["indexStatus"]): IndexStatus =>
   s === "ready" ? "indexed" : s === "failed" ? "failed" : s === "processing" ? "parsing" : "pending";
@@ -91,6 +92,7 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
   }, [load]);
 
   const [watch, setWatch] = useState(0);
+  const [editing, setEditing] = useState<{ doc: string; version: string; title: string }>();
   const poll = shouldPoll(docs, watch);
   useEffect(() => {
     if (!poll) return undefined;
@@ -150,6 +152,7 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
             <Button size="small" danger disabled={v.withdrawn}>撤回</Button>
           </Popconfirm>
           <Button size="small" disabled={v.indexStatus === "pending" || v.indexStatus === "processing"} onClick={() => act(() => client.reindex(kbId, doc.id, v.id), true)}>重建索引</Button>
+          <Button size="small" onClick={() => setEditing({ doc: doc.id, version: v.id, title: `${doc.title} ${v.versionLabel}` })}>编辑切块</Button>
         </Space>
       ),
     },
@@ -200,6 +203,10 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
                   locale={{ emptyText: "暂无版本" }} scroll={{ x: 760 }} />
                 <NewVersionForm onCreate={(label, from, until) => act(() => client.createVersion(kbId, doc.id,
                   until ? { versionLabel: label, effectiveFrom: from, effectiveUntil: until } : { versionLabel: label, effectiveFrom: from }))} />
+                {editing?.doc === doc.id && (
+                  <ChunkEditor client={client} kbId={kbId} documentId={editing.doc} versionId={editing.version} title={editing.title}
+                    onSaved={() => void load()} />
+                )}
               </div>
             ),
           }}

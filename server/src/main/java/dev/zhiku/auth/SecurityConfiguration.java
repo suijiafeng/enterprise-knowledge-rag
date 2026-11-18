@@ -62,7 +62,7 @@ public class SecurityConfiguration {
         .csrf(AbstractHttpConfigurer::disable)
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(a -> a
-            .requestMatchers(HttpMethod.GET, "/api/status").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/status", "/api/example-evaluation").permitAll()
             .requestMatchers(HttpMethod.POST, "/api/chat").authenticated()
             .requestMatchers(HttpMethod.PUT, "/api/messages/*/feedback").authenticated()
             // Widget token 只能提问和评价自己的回答。

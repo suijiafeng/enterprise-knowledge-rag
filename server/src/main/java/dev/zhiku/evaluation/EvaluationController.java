@@ -1,9 +1,12 @@
 package dev.zhiku.evaluation;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -28,7 +32,7 @@ class EvaluationController {
 
   record DetailsRequest(@Size(max = 2000) String expectedAnswer, List<String> requiredFacts, @Size(max = 200) String appliesTo, Instant queryAt) {}
 
-  record RunRequest(Integer k) {}
+  record RunRequest(Integer k, Integer contextChunks, Boolean generate, String judge, Boolean rerank, Integer rerankPool, String chunkStrategy) {}
 
   record EvidenceRequest(@Size(max = 10) @Valid List<EvaluationService.EvidenceInput> evidence) {}
 
@@ -68,9 +72,36 @@ class EvaluationController {
     service.setDetails(kbId, caseId, new EvaluationService.Details(request.expectedAnswer(), request.requiredFacts(), request.appliesTo(), request.queryAt()));
   }
 
+  @PostMapping(value = "/eval-cases/import", consumes = {"application/json", "text/csv", "text/plain", "application/octet-stream"})
+  @ResponseStatus(HttpStatus.CREATED)
+  EvaluationService.ImportResult importCases(@PathVariable UUID kbId, HttpServletRequest request,
+      @RequestParam(defaultValue = "false") boolean approve, @RequestParam(required = false) String name) throws IOException {
+    var bytes = request.getInputStream().readNBytes(2_000_001);
+    if (bytes.length > 2_000_000) throw dev.zhiku.platform.ApiException.unprocessable("Import is too large");
+    return service.importCases(kbId, new String(bytes, StandardCharsets.UTF_8), request.getContentType(), approve, name);
+  }
+
+  @GetMapping("/eval-settings")
+  EvaluationService.EvalSettings settings(@PathVariable UUID kbId) {
+    return service.settings(kbId);
+  }
+
   @PostMapping("/eval-runs")
   EvaluationService.RunView run(@PathVariable UUID kbId, @RequestBody(required = false) RunRequest request) {
-    return service.run(kbId, request == null ? null : request.k());
+    var options = request == null ? null
+        : new EvaluationService.RunOptions(request.k(), request.contextChunks(), request.generate(), request.judge(), request.rerank(),
+            request.rerankPool(), request.chunkStrategy());
+    return service.run(kbId, options);
+  }
+
+  @GetMapping("/eval-runs")
+  List<EvaluationService.RunView> runs(@PathVariable UUID kbId) {
+    return service.runs(kbId);
+  }
+
+  @GetMapping("/eval-runs/{runId}")
+  EvaluationService.RunView run(@PathVariable UUID kbId, @PathVariable UUID runId) {
+    return service.get(kbId, runId);
   }
 
   @GetMapping("/eval-runs/latest")

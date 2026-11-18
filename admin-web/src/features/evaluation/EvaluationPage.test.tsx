@@ -1,11 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { EvaluationPage } from "./EvaluationPage";
 import { evaluationFixture, type EvalRow } from "./fixtures";
 import { p95, resultOf, summarize } from "./metrics";
+import { PublicEvaluation, type ExampleSnapshot } from "./PublicEvaluation";
+import type { EvalRun } from "../../api/client";
 
 const rows = evaluationFixture.rows;
-const html = renderToStaticMarkup(<EvaluationPage data={evaluationFixture} />);
+const sampleRun = {
+  id: "example-run", k: 1, model: "test-hash-64", createdAt: "2026-11-17T00:00:00Z", rerankEnabled: false,
+  summary: { cases: 1, evaluated: 1, prepFailed: 0, notApplicable: 0, hit: { num: 1, den: 2 }, recall: { num: 1, den: 2 }, recallMacro: 0.5, p95Ms: 8, mrr: 0.5, faithfulness: null, relevance: null },
+  results: [],
+} as EvalRun;
+const snapshot: ExampleSnapshot = { example: true, notice: "虚构示例，不是企业数据", runs: [sampleRun] };
+const html = renderToStaticMarkup(<PublicEvaluation snapshot={snapshot} />);
 
 const row = (patch: Partial<EvalRow>): EvalRow => ({ ...rows[0]!, ...patch });
 
@@ -36,29 +43,13 @@ describe("evaluation metrics", () => {
   });
 });
 
-describe("evaluation page", () => {
-  it("reports numerator and denominator, not bare percentages", () => {
-    const s = summarize(rows);
-    expect(html).toContain(`${s.hit.num}/${s.hit.den}`);
-    expect(html).toContain(`${s.correct.num}/${s.correct.den}`);
-    expect(html).toContain("试点");
-  });
-
-  it("lists every question and a separate preparation-failure state", () => {
-    for (const r of rows) expect(html).toContain(r.question);
-    expect(html).toContain("评测准备失败");
-  });
-
-  it("only uses PRD root-cause categories and never defaults to the model", () => {
-    for (const r of rows.filter((x) => x.rootCause)) expect(html).toContain(r.rootCause!);
-    expect(html).not.toContain("模型问题");
-  });
-
-  it("does not let feedback or config changes skip review", () => {
+describe("public evaluation page", () => {
+  it("shows the example hit ratio and no private actions", () => {
+    expect(html).toContain("1/2");
+    expect(html).toContain("示例");
+    expect(html).toContain("虚构示例，不是企业数据");
+    expect(html).not.toContain("运行评测");
+    expect(html).not.toContain("导入 JSON");
     expect(html).not.toContain("确认入库");
-    expect(html).not.toContain("确认应用");
-    expect(html).not.toContain("BM25 权重");
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*补齐真值后审批/s);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*运行评测/s);
   });
 });

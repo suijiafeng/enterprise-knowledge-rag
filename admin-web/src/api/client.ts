@@ -24,6 +24,20 @@ export interface KnowledgeBase {
 
 export type IndexState = "pending" | "processing" | "ready" | "failed";
 
+export interface ChunkView {
+  id: string;
+  seq: number;
+  startOffset: number;
+  endOffset: number;
+  text: string;
+}
+
+export interface ChunkDraft {
+  text: string;
+  startOffset: number;
+  endOffset: number;
+}
+
 export interface VersionInfo {
   id: string;
   versionLabel: string;
@@ -206,6 +220,21 @@ export interface RecordStats {
   reasons: Partial<Record<FeedbackReason, number>>;
 }
 
+export interface ChatReceipt {
+  status: string;
+  conversationId?: string;
+  messageId?: string;
+  acceptedAt: string;
+  question?: string;
+  answer?: string;
+  hidden?: boolean;
+}
+
+export interface MessagePage {
+  items: HistoryMessage[];
+  nextCursor: string | null;
+}
+
 export interface HistoryMessage {
   id: string;
   question: string;
@@ -324,6 +353,27 @@ export interface EvalSummary {
   sourceUnavailable?: number;
   /** 运行期间有索引任务完成，结果可能混用新旧切块。 */
   indexChangedDuringRun?: boolean;
+  /** 旧的纯检索运行没有这些字段。没有样本时为 null，不表示 0。 */
+  mrr?: number | null;
+  p50Ms?: number | null;
+  faithfulness?: number | null;
+  relevance?: number | null;
+  p50E2eMs?: number | null;
+  p95E2eMs?: number | null;
+  judged?: number;
+}
+
+export interface RetrievedHit {
+  rank: number;
+  chunkId: string;
+  versionId: string;
+  documentTitle: string;
+  versionLabel: string;
+  startOffset: number;
+  endOffset: number;
+  score: number;
+  text: string;
+  overlapsEvidence: boolean;
 }
 
 export interface EvalResult {
@@ -336,15 +386,55 @@ export interface EvalResult {
   evidenceTotal: number;
   latencyMs: number;
   sourceUnavailable?: boolean;
+  firstRelevantRank?: number | null;
+  answer?: string | null;
+  generationMs?: number | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  faithfulness?: number | null;
+  relevance?: number | null;
+  failure?: string | null;
+  citation?: string | null;
+  judgeReason?: string | null;
+  retrieved?: RetrievedHit[];
 }
 
 export interface EvalRun {
   id: string;
   k: number;
+  /** 向量模型。旧运行可能只有这一项。 */
   model: string | null;
   createdAt: string;
   summary: EvalSummary;
   results: EvalResult[];
+  contextChunks?: number | null;
+  chunkMaxChars?: number | null;
+  chunkOverlap?: number | null;
+  rerankEnabled?: boolean;
+  rerankPool?: number | null;
+  generate?: boolean;
+  judge?: "llm" | "simulated" | null;
+  chatModel?: string | null;
+}
+
+export interface EvalSettings {
+  chunkStrategy: string;
+  chunkMaxChars: number;
+  chunkOverlap: number;
+  rerankEnabled: boolean;
+  rerank: string;
+  maxK: number;
+  defaultContextChunks: number;
+  maxContextChunks: number;
+  chatConfigured: boolean;
+  chatModel: string | null;
+}
+
+export interface EvalImportResult {
+  created: number;
+  approved: number;
+  example: boolean;
+  name: string;
 }
 
 export class ApiError extends Error {
@@ -412,6 +502,9 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
       return request<{ jobId: string }>(`${version(kbId, doc, v)}/content`, { method: "PUT", body: form });
     },
     reindex: (kbId: string, doc: string, v: string) => request<void>(`${version(kbId, doc, v)}/reindex`, { method: "POST" }),
+    chunks: (kbId: string, doc: string, v: string) => request<ChunkView[]>(`${version(kbId, doc, v)}/chunks`),
+    saveChunks: (kbId: string, doc: string, v: string, chunks: ChunkDraft[]) =>
+      request<ChunkView[]>(`${version(kbId, doc, v)}/chunks`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chunks }) }),
     retrievalDebug: (kbId: string, query: string, k?: number, configVersion?: number) =>
       request<TraceResult>(`${kb(kbId)}/retrieval-debug`, post({ query, ...(k === undefined ? {} : { k }), ...(configVersion === undefined ? {} : { configVersion }) })),
     overview: (kbId: string) => request<OverviewApi>(`${kb(kbId)}/overview`),
@@ -424,7 +517,13 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
     setEvalCaseDetails: (kbId: string, caseId: string, details: CaseDetails) =>
       request<void>(`${kb(kbId)}/eval-cases/${e(caseId)}/details`, { ...post(details), method: "PUT" }),
     approveEvalCase: (kbId: string, caseId: string) => request<void>(`${kb(kbId)}/eval-cases/${e(caseId)}/approve`, { method: "POST" }),
-    runEvaluation: (kbId: string, k: number) => request<EvalRun>(`${kb(kbId)}/eval-runs`, post({ k })),
+    evalSettings: (kbId: string) => request<EvalSettings>(`${kb(kbId)}/eval-settings`),
+    importEvalCases: (kbId: string, body: string, contentType: string, approve: boolean) =>
+      request<EvalImportResult>(`${kb(kbId)}/eval-cases/import?approve=${approve}`, { method: "POST", headers: { "Content-Type": contentType }, body }),
+    runEvaluation: (kbId: string, body: { k: number; contextChunks?: number; generate?: boolean; judge?: "llm" | "simulated"; rerank?: boolean; rerankPool?: number }) =>
+      request<EvalRun>(`${kb(kbId)}/eval-runs`, post(body)),
+    evalRuns: (kbId: string) => request<EvalRun[]>(`${kb(kbId)}/eval-runs`),
+    evalRun: (kbId: string, runId: string) => request<EvalRun>(`${kb(kbId)}/eval-runs/${e(runId)}`),
     latestRun: (kbId: string) => request<EvalRun | undefined>(`${kb(kbId)}/eval-runs/latest`),
     me: () => request<Me>("/api/me"),
     rolePolicy: () => request<RolePolicy>("/api/policy/roles"),
@@ -448,7 +547,15 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
       request<KnowledgeBaseConfig>(`${kb(kbId)}/config/versions/${version}/rollback`, { method: "POST" }),
     trace: (kbId: string, traceId: string) => request<StoredTrace>(`${kb(kbId)}/traces/${e(traceId)}`),
     chatRequest: (clientRequestId: string) =>
-      request<{ status: string; conversationId?: string; messageId?: string; acceptedAt: string }>(`/api/chat/requests/${e(clientRequestId)}`),
+      request<ChatReceipt>(`/api/chat/requests/${e(clientRequestId)}`),
+    messagePage: (id: string, query: { limit?: number; before?: string } = {}) => {
+      const q = new URLSearchParams();
+      if (query.limit !== undefined) q.set("limit", String(query.limit));
+      if (query.before) q.set("before", query.before);
+      const qs = q.toString();
+      const suffix = qs ? `?${qs}` : "";
+      return request<MessagePage>(`/api/conversations/${e(id)}/messages/page${suffix}`);
+    },
     feedbackHistory: (kbId: string, messageId: string) => request<HandlingEntry[]>(`${kb(kbId)}/feedback/${e(messageId)}/history`),
     conversations: () => request<Conversation[]>("/api/conversations"),
     messages: (id: string) => request<HistoryMessage[]>(`/api/conversations/${e(id)}/messages`),

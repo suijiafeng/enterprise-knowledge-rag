@@ -103,6 +103,37 @@ public class IngestionRepository {
         Integer.class, jobId, owner).isEmpty();
   }
 
+  public record StoredChunk(UUID id, int seq, int startOffset, int endOffset, String text) {}
+
+  public record VersionGate(int sourceLength, boolean withdrawn, boolean deleted) {}
+
+  /** 版本必须属于该知识库的该文档。不存在时 empty。 */
+  public Optional<VersionGate> versionGate(UUID kbId, UUID documentId, UUID versionId) {
+    var rows = jdbc.query("""
+        SELECT d.deleted_at IS NOT NULL AS deleted, v.withdrawn_at IS NOT NULL AS withdrawn, b.content
+        FROM content_version v
+        JOIN document d ON d.id = v.document_id
+        LEFT JOIN content_blob b ON b.version_id = v.id
+        WHERE v.id = ? AND v.document_id = ? AND d.kb_id = ?
+        """, (rs, i) -> {
+          var bytes = rs.getBytes("content");
+          int length = 0;
+          if (bytes != null) {
+            var text = TextChunker.normalize(new String(bytes, java.nio.charset.StandardCharsets.UTF_8).replaceFirst("^﻿", ""));
+            length = text.length();
+          }
+          return new VersionGate(length, rs.getBoolean("withdrawn"), rs.getBoolean("deleted"));
+        }, versionId, documentId, kbId);
+    return rows.stream().findFirst();
+  }
+
+  public List<StoredChunk> chunks(UUID versionId) {
+    return jdbc.query("""
+        SELECT id, seq, start_offset, end_offset, text FROM chunk WHERE version_id = ? ORDER BY seq, id
+        """, (rs, i) -> new StoredChunk(rs.getObject("id", UUID.class), rs.getInt("seq"), rs.getInt("start_offset"), rs.getInt("end_offset"),
+            rs.getString("text")), versionId);
+  }
+
   /** 替换该版本的全部 chunk，并按序号顺序返回其 id。 */
   public List<UUID> replaceChunks(UUID versionId, List<Chunk> chunks) {
     jdbc.update("DELETE FROM chunk WHERE version_id = ?", versionId);

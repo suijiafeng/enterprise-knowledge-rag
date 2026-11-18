@@ -1,0 +1,4 @@
+question,label,expectedAnswer,requiredFacts,documentTitle,versionLabel,quote,appliesTo
+年假申请窗口年假申请窗口年假申请窗口,answerable,司龄满十年的员工每年可以休假十五天。,司龄满十年的员工每年可以休假十五天,年假办法（示例）,v1,司龄满十年的员工每年可以休假十五天,正式员工
+出差住宿超标怎么办,answerable,超标部分需事前审批。,超标部分需事前审批,差旅办法（示例）,v1,超标部分需事前审批,
+申请须提前三个工作日,answerable,申请须提前三个工作日。,申请须提前三个工作日,年假办法（示例）,v1,申请须提前三个工作日,正式员工

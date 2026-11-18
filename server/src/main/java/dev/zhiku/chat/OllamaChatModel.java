@@ -56,6 +56,29 @@ public class OllamaChatModel implements ChatModel {
   }
 
   @Override
+  public Completion complete(List<Message> messages) {
+    try {
+      var body = json.writeValueAsString(Map.of("model", settings.model(), "messages", messages, "stream", false,
+          "options", Map.of("temperature", 0.1)));
+      var request = HttpRequest.newBuilder(URI.create(settings.baseUrl() + "/api/chat"))
+          .timeout(settings.timeout()).header("Content-Type", "application/json")
+          .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+      var response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+      if (response.statusCode() != 200) throw new IllegalStateException("Chat model returned HTTP " + response.statusCode());
+      var node = json.readTree(response.body());
+      if (node.hasNonNull("error")) throw new IllegalStateException("Chat model reported an error");
+      Integer prompt = node.has("prompt_eval_count") ? node.get("prompt_eval_count").asInt() : null;
+      Integer completion = node.has("eval_count") ? node.get("eval_count").asInt() : null;
+      return new Completion(node.path("message").path("content").asText(""), prompt, completion);
+    } catch (IOException e) {
+      throw new IllegalStateException("Chat model is unavailable", e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Chat model call interrupted", e);
+    }
+  }
+
+  @Override
   public void stream(List<Message> messages, Consumer<String> onToken, BooleanSupplier cancelled) {
     long deadline = System.nanoTime() + settings.timeout().toNanos();
     try {

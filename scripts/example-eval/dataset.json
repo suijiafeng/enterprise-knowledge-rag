@@ -1,0 +1,47 @@
+{
+  "name": "示例-员工制度",
+  "example": true,
+  "notice": "虚构示例，不是业务数据。期望命中写成文档标题、版本标签和原文摘录，不使用 chunk id。",
+  "cases": [
+    {
+      "question": "年假申请窗口年假申请窗口年假申请窗口",
+      "label": "answerable",
+      "expectedAnswer": "司龄满十年的员工每年可以休假十五天。",
+      "requiredFacts": ["司龄满十年的员工每年可以休假十五天"],
+      "evidence": [
+        {
+          "documentTitle": "年假办法（示例）",
+          "versionLabel": "v1",
+          "quote": "司龄满十年的员工每年可以休假十五天"
+        }
+      ]
+    },
+    {
+      "question": "出差住宿超标怎么办",
+      "label": "answerable",
+      "expectedAnswer": "超标部分需事前审批。",
+      "requiredFacts": ["超标部分需事前审批"],
+      "evidence": [
+        {
+          "documentTitle": "差旅办法（示例）",
+          "versionLabel": "v1",
+          "quote": "超标部分需事前审批"
+        }
+      ]
+    },
+    {
+      "question": "申请须提前三个工作日",
+      "label": "answerable",
+      "expectedAnswer": "申请须提前三个工作日。",
+      "requiredFacts": ["申请须提前三个工作日"],
+      "appliesTo": "正式员工",
+      "evidence": [
+        {
+          "documentTitle": "年假办法（示例）",
+          "versionLabel": "v1",
+          "quote": "申请须提前三个工作日"
+        }
+      ]
+    }
+  ]
+}

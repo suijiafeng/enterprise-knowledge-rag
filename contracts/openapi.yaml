@@ -68,9 +68,10 @@ paths:
     get:
       operationId: chatRequestOutcome
       description: >-
-        Caller's own request only (404 otherwise); ASK_AND_CITE on its knowledge base is re-checked (403). Returns ids and
-        status, never answer text: read the answer from conversation history, which re-checks its sources. running means
-        accepted without an outcome yet; interrupted means no outcome within the stream timeout. Not available to widget tokens.
+        Caller's own request only (404 otherwise); ASK_AND_CITE on its knowledge base is re-checked (403). Widget tokens may
+        call this lookup and must not POST the same clientRequestId again. Answer text is included only after the same
+        source check as conversation history: a deleted or withdrawn source omits the answer (hidden=true). running means
+        accepted without an outcome yet; interrupted means no outcome within the stream timeout.
       responses:
         '200':
           description: Outcome
@@ -84,6 +85,9 @@ paths:
                   conversationId: {type: string, format: uuid}
                   messageId: {type: string, format: uuid}
                   acceptedAt: {type: string, format: date-time}
+                  question: {type: string}
+                  answer: {type: string}
+                  hidden: {type: boolean}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/Error'}
@@ -109,6 +113,20 @@ paths:
       responses:
         '200': {description: Messages}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /api/conversations/{id}/messages/page:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      - {name: before, in: query, schema: {type: string}, description: Opaque cursor of (created_at, id). The page is strictly before that pair; equal timestamps are ordered by id.}
+    get:
+      operationId: pageMessages
+      description: >-
+        One page of the caller's own conversation, oldest-to-newest within the page. nextCursor is the oldest row in the
+        page when older rows remain, otherwise null. Visibility rules match listMessages.
+      responses:
+        '200': {description: Message page}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
   /api/messages/{messageId}/feedback:
     parameters: [{name: messageId, in: path, required: true, schema: {type: string, format: uuid}}]
     put:
@@ -638,20 +656,135 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Error'}
         '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/eval-cases/import:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    post:
+      operationId: importEvalCases
+      description: >-
+        DEBUG_AND_EVALUATE. Imports a dataset as candidate cases (or approved when approve=true). JSON object
+        {name, example, cases:[{question, label, expectedAnswer, requiredFacts, appliesTo, evidence:[{documentTitle, versionLabel, quote}]}]}.
+        CSV header question,label,expectedAnswer,requiredFacts,documentTitle,versionLabel,quote and optional appliesTo;
+        requiredFacts are separated by |. Ground truth is a quote in a document version, not a chunk id (422).
+        One bad row rolls the whole import back. example=true stores source example:<name>; otherwise import:<name>.
+        At most 50 cases. Audited without the question text.
+      parameters:
+        - {name: approve, in: query, schema: {type: boolean, default: false}}
+        - {name: name, in: query, schema: {type: string}, description: Overrides the dataset name. CSV defaults to csv.}
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {type: object}}
+          text/csv: {schema: {type: string}}
+      responses:
+        '201': {description: Created and optionally approved}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/eval-settings:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    get:
+      operationId: evalSettings
+      description: >-
+        DEBUG_AND_EVALUATE. The parameters a run can actually record. chunkStrategy is fixed-overlap with the deployment
+        chunk window; rerankEnabled is false because reranking is not implemented. chatConfigured reports whether a chat model bean exists.
+      responses:
+        '200': {description: Settings}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /api/knowledge-bases/{kbId}/eval-runs:
     parameters: [{$ref: '#/components/parameters/kbId'}]
+    get:
+      operationId: listEvaluationRuns
+      description: DEBUG_AND_EVALUATE. Up to 50 newest runs, including per-case retrieval text, answers and scores stored for that run.
+      responses:
+        '200': {description: Runs}
+        '403': {$ref: '#/components/responses/Forbidden'}
     post:
       operationId: runEvaluation
       description: >-
-        Retrieval evaluation of approved answerable cases with the caller's authorized scope; no model call.
-        Cases whose evidence version is not eligible now (withdrawn, deleted, expired) are counted as sourceUnavailable,
-        before and after deletion cleanup alike. Spans are mapped onto current chunks; unmappable cases are preparation
-        failures. Both are excluded from denominators. A span counts as retrieved only when the retrieved chunks cover all
-        of it. Reports Hit@K, evidence recall (spans and macro), P95 retrieval latency, and indexChangedDuringRun when an index job completed while the run was in progress (results may mix old and new chunks; rerun). Answer correctness is not measured here.
-      requestBody: {content: {application/json: {schema: {type: object, properties: {k: {type: integer, minimum: 1, maximum: 30, default: 5}}}}}}
+        DEBUG_AND_EVALUATE. Retrieval evaluation of approved answerable cases. Optional generation uses the same system prompt as chat
+        and does not write a conversation. judge llm calls the chat model and keeps scores only when it returns JSON in [0,1];
+        judge simulated is a lexical overlap of required facts, not a semantic grade. Omitting judge uses llm when a chat model exists.
+        Without a chat model, generation is recorded as a per-case failure and scores stay null. rerank true is rejected.
+        chunkStrategy other than fixed-overlap is rejected; the run records the deployment chunk window and does not reindex.
+        contextChunks defaults to min(deployment default, k). Hit@K and Recall@K require full span coverage. MRR uses the first
+        overlapping chunk. P50/P95 are nearest-rank. End-to-end latency includes only cases that generated. Tokens are stored only
+        when the provider returns them.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                k: {type: integer, minimum: 1, maximum: 30, default: 5}
+                contextChunks: {type: integer, minimum: 1}
+                generate: {type: boolean, default: false}
+                judge: {type: string, enum: [llm, simulated]}
+                rerank: {type: boolean, description: Character-bigram BM25 blended with the vector score inside the candidate pool. Default false.}
+                rerankPool: {type: integer, minimum: 1, description: How many vector hits are reranked. Required to be between k and max-k when rerank is true; default min(max-k, max(k, k*4)).}
+                chunkStrategy: {type: string, description: only fixed-overlap is accepted; a run does not rechunk}
       responses:
         '200': {description: Run with results}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/eval-runs/{runId}:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: runId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      operationId: getEvaluationRun
+      description: DEBUG_AND_EVALUATE. One stored run. 404 when it is not in this knowledge base.
+      responses:
+        '200': {description: Run}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/example-evaluation:
+    get:
+      operationId: exampleEvaluation
+      description: >-
+        Public. Returns the bundled example-evaluation snapshot only. It does not read the database and never includes
+        another tenant's questions, documents or runs. example is always true.
+      security: []
+      responses:
+        '200': {description: Example snapshot}
+  /api/knowledge-bases/{kbId}/documents/{documentId}/versions/{versionId}/chunks:
+    parameters:
+      - {$ref: '#/components/parameters/kbId'}
+      - {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: versionId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listChunks
+      description: MANAGE_DOCUMENTS. Chunks of one version in sequence order, with source character offsets.
+      responses:
+        '200': {description: Chunks}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Error'}
+    put:
+      operationId: replaceChunks
+      description: >-
+        MANAGE_DOCUMENTS. Replaces every chunk of the version and re-embeds them with the configured embedding model.
+        Offsets must stay inside the normalized source. Withdrawn or deleted sources are rejected. At least one chunk.
+        The source file is not rewritten. Takes effect in retrieval immediately. 503 when no embedding model is configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chunks]
+              properties:
+                chunks:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [text, startOffset, endOffset]
+                    properties:
+                      text: {type: string, minLength: 1, maxLength: 8000}
+                      startOffset: {type: integer, minimum: 0}
+                      endOffset: {type: integer, minimum: 1}
+      responses:
+        '200': {description: Saved chunks}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
   /api/knowledge-bases/{kbId}/eval-runs/latest:
     parameters: [{$ref: '#/components/parameters/kbId'}]

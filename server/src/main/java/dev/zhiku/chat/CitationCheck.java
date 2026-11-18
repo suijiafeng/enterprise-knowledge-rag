@@ -3,15 +3,15 @@ package dev.zhiku.chat;
 import java.util.regex.Pattern;
 
 /** 元数据级引用检查：标记存在且对应到提供的来源。不是语义支撑检查。 */
-final class CitationCheck {
-  enum Result { OK, NONE, OUT_OF_RANGE }
+public final class CitationCheck {
+  public enum Result { OK, NONE, OUT_OF_RANGE }
 
   private static final Pattern MARKER = Pattern.compile("\\[(\\d{1,9})\\]");
   private static final Pattern TOO_LONG = Pattern.compile("\\[\\d{10,}\\]");
 
   private CitationCheck() {}
 
-  static Result check(String answer, int sources) {
+  public static Result check(String answer, int sources) {
     if (TOO_LONG.matcher(answer).find()) return Result.OUT_OF_RANGE;
     var m = MARKER.matcher(answer);
     boolean any = false;
