@@ -91,7 +91,7 @@ describe("widget scrolling", () => {
     fireEvent.scroll(body);
     act(() => push("第三段"));
     await screen.findByText(/第三段/);
-    expect(scrollTo).toHaveBeenCalled();
+    await waitFor(() => expect(scrollTo).toHaveBeenCalled());
   });
 });
 

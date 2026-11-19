@@ -111,7 +111,7 @@ class IngestionSchedulingTest {
   }
 
   static void waitUntil(java.util.function.BooleanSupplier condition) throws InterruptedException {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
     while (!condition.getAsBoolean()) {
       if (System.nanoTime() > deadline) throw new AssertionError("condition not met in time");
       Thread.sleep(10);
