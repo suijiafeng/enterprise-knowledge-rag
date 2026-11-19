@@ -8,7 +8,7 @@ export interface ColumnPoint {
   tone?: "ink" | "alert" | "neutral";
 }
 
-const FILL = { ink: "#18181B", alert: "#9F1239", neutral: "#D4D4D8" };
+const FILL = { ink: "#2f5bd3", alert: "#d4380d", neutral: "#c3d3f2" };
 
 /** 带水平参考线和悬浮说明的柱图。高度由数据决定，不写死。 */
 export function ColumnChart({ label, points }: { label: string; points: ColumnPoint[] }) {
@@ -34,7 +34,7 @@ export function ColumnChart({ label, points }: { label: string; points: ColumnPo
           const y = padT + innerH - ratio * innerH;
           return (
             <g key={index}>
-              <line x1={padL} x2={width - padR} y1={y} y2={y} stroke="#E4E4E7" strokeDasharray="3 3" />
+              <line x1={padL} x2={width - padR} y1={y} y2={y} stroke="#e6e9ef" strokeDasharray="3 3" />
               <text x={padL - 6} y={y + 3} textAnchor="end" className="chart-tick">{Math.round(max * ratio)}</text>
             </g>
           );
@@ -83,7 +83,7 @@ export function RatioChart({ label, items }: {
           const x = padL + guide * innerW;
           return (
             <g key={guide}>
-              <line x1={x} x2={x} y1={padT} y2={padT + items.length * rowH} stroke="#E4E4E7" strokeDasharray="3 3" />
+              <line x1={x} x2={x} y1={padT} y2={padT + items.length * rowH} stroke="#e6e9ef" strokeDasharray="3 3" />
               <text x={x} y={height - 2} textAnchor="middle" className="chart-tick">{guide}</text>
             </g>
           );
@@ -98,7 +98,7 @@ export function RatioChart({ label, items }: {
               <text x={padL - 8} y={y + 16} textAnchor="end" className="chart-tick">{item.label}</text>
               {item.value == null
                 ? <text x={padL + 4} y={y + 16} className="chart-tick">无数据</text>
-                : <rect x={padL} y={y + 8} width={barW} height={8} rx="2" fill="#3F3F46" />}
+                : <rect x={padL} y={y + 8} width={barW} height={8} rx="2" fill="#2f5bd3" />}
               <text x={width - 8} y={y + 16} textAnchor="end" className="chart-tick">{item.text}</text>
             </g>
           );

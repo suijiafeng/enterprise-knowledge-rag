@@ -25,10 +25,10 @@ describe("widget", () => {
   it("accepts only hex theme colours", () => {
     expect(normalizeTheme("#1D5BBF")).toBe("#1D5BBF");
     expect(normalizeTheme("#abc")).toBe("#abc");
-    expect(normalizeTheme("red;background:url(x)")).toBe("#18181B");
-    expect(normalizeTheme(undefined)).toBe("#18181B");
+    expect(normalizeTheme("red;background:url(x)")).toBe("#2f5bd3");
+    expect(normalizeTheme(undefined)).toBe("#2f5bd3");
     const html = renderToStaticMarkup(<ZhikuWidget endpoint="/api/chat" knowledgeBaseId="kb" defaultOpen themeColor="url(evil)" />);
-    expect(html).toContain("--zhiku-primary:#18181B");
+    expect(html).toContain("--zhiku-primary:#2f5bd3");
   });
 
   it("escapes host-provided text with normal React rendering", () => {

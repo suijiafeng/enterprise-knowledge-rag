@@ -59,7 +59,7 @@ createSseParser 仅解析 event/data 分帧，输出字符串；不会执行 HTM
 - 只有先 validated 后 done 才算 complete；error、取消、协议违规、流提前结束（`STREAM_INCOMPLETE`）都丢弃回答。onEvent 收到的 draft 是临时内容，结果不是 complete 时调用方必须丢弃。
 - 不自动重发 POST，避免重复计费。每次提问带上 clientRequestId；断线后查询该编号，不重新提交问题。
 
-ZhikuWidget 按设计稿第 12 页实现：右下角悬浮按钮，展开为 380×620 面板（手机全屏）；问候语与快捷问题；回答中的 [n] 点击展开来源卡；赞/踩（踩需选原因）通过 rateMessage 同步到管理端"问答记录"；themeColor 只接受 #rgb/#rrggbb，否则回退 #18181B。样式以内嵌 <style> 提供，所有选择器以 .zhiku- 开头，不影响宿主页面。会话只保存在组件内存中。不提供匿名提问（首版采用受控身份）。
+ZhikuWidget 按设计稿第 12 页实现：右下角悬浮按钮，展开为 380×620 面板（手机全屏）；问候语与快捷问题；回答中的 [n] 点击展开来源卡；赞/踩（踩需选原因）通过 rateMessage 同步到管理端"问答记录"；themeColor 只接受 #rgb/#rrggbb，否则回退 #2f5bd3。样式以内嵌 <style> 提供，所有选择器以 .zhiku- 开头，不影响宿主页面。会话只保存在组件内存中。不提供匿名提问（首版采用受控身份）。
 
 ZhikuWidget 使用 streamChat：发送时才调用 getAccessToken，流式把 draft 追加到当前回答，只有 complete 才保留回答和来源；取消或失败即丢弃当前草稿。组件不写 localStorage、Cookie 或令牌。sessionStorage 只保存待确认的 requestId 和问题；刷新后先 GET 原请求，查到可见回答就显示一次。
 

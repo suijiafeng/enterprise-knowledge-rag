@@ -39,7 +39,7 @@ function CodeBlock({ code }: { code: string }) {
 
 /** 接入指南仅限真实存在的访问方式：短期 widget token。没有长期密钥。 */
 export function IntegrationPage({ kbId, kbName }: { kbId: string | undefined; kbName: string | undefined }) {
-  const [theme, setTheme] = useState("#18181B");
+  const [theme, setTheme] = useState("#2f5bd3");
   return (
     <div className="page">
       <div className="page-head">
@@ -59,7 +59,7 @@ export function IntegrationPage({ kbId, kbName }: { kbId: string | undefined; kb
               <Input size="small" className="theme-input" value={theme} onChange={(e) => setTheme(e.target.value)} aria-label="主题色" addonBefore="主题色" maxLength={7} />
             }>
               <CodeBlock code={embedSnippet(kbId, theme)} />
-              <Typography.Paragraph type="secondary" className="page-sub">主题色只接受 #rgb / #rrggbb，其他值回退 #18181B。</Typography.Paragraph>
+              <Typography.Paragraph type="secondary" className="page-sub">主题色只接受 #rgb / #rrggbb，其他值回退 #2f5bd3。</Typography.Paragraph>
             </Card>
             <Card size="small" className="debug-card" title="宿主后端换取挂件令牌">
               <CodeBlock code={tokenSnippet(kbId)} />
