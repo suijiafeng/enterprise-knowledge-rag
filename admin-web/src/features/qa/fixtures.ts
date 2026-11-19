@@ -23,11 +23,11 @@ const answer = "员工年假按司龄计算：1-3 年 5 天，3-10 年 10 天，
 
 export const qaFixture: QaData = {
   sessions: [
-    { id: "s1", title: "年假与请假咨询", updatedAt: "10-13 02:12" },
-    { id: "s2", title: "报销流程问题", updatedAt: "10-13 01:58" },
-    { id: "s3", title: "VPN 申请", updatedAt: "10-13 00:26" },
-    { id: "s4", title: "差旅标准", updatedAt: "10-12 23:51" },
-    { id: "s5", title: "考勤制度", updatedAt: "10-12 11:05" },
+    { id: "s1", title: "年假与请假咨询", updatedAt: "2026-11-19 11:12:41" },
+    { id: "s2", title: "报销流程问题", updatedAt: "2026-11-19 10:48:03" },
+    { id: "s3", title: "VPN 申请", updatedAt: "2026-11-18 17:26:55" },
+    { id: "s4", title: "差旅标准", updatedAt: "2026-11-18 16:51:18" },
+    { id: "s5", title: "考勤制度", updatedAt: "2026-11-14 18:05:52" },
   ],
   sample: { question: "年假最多可以休几天？需要提前多久申请？", answer, citations },
   sources: [

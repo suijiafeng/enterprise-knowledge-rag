@@ -8,6 +8,7 @@ import { ROOT_CAUSES } from "../evaluation/fixtures";
 import { REASON_LABEL } from "../qa/FeedbackBar";
 import { OUTCOME_LABEL } from "../qa/outcome";
 import { EmptyState, LoadingList } from "../../components/StateViews";
+import { formatInstant } from "../../format";
 
 type Filter = "all" | "up" | "down" | "none";
 
@@ -53,13 +54,14 @@ export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate,
       scroll={{ x: 1100 }}
       locale={{ emptyText: "暂无问答记录" }}
       columns={[
-        { title: "时间", dataIndex: "createdAt", className: "mono", width: 170, render: (v: string) => new Date(v).toLocaleString("zh-CN") },
-        { title: "提问人", dataIndex: "own", width: 80, render: (own: boolean) => (own ? <Tag color="blue">本人</Tag> : <Tag>他人</Tag>) },
+        { title: "时间", dataIndex: "createdAt", className: "mono", width: 180, render: (v: string) => formatInstant(v) },
+        { title: "提问人", dataIndex: "own", width: 80, render: (own: boolean) => (own ? <Tag>本人</Tag> : <Tag>他人</Tag>) },
         {
           title: "问题",
           dataIndex: "question",
-          minWidth: 200,
-          render: (q: string | null) => q ?? <Typography.Text type="secondary">无权查看他人问答正文</Typography.Text>,
+          fixed: "left",
+          width: 220,
+          render: (q: string | null) => q ? <span className="clip" title={q}>{q}</span> : <Typography.Text type="secondary">无权查看他人问答正文</Typography.Text>,
         },
         {
           title: "结果",
@@ -67,7 +69,7 @@ export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate,
           width: 80,
           render: (o: RecordItem["outcome"], r) => (
             <>
-              <Tag color={o === "complete" ? "blue" : o === "refused" ? "default" : "warning"}>{OUTCOME_LABEL[o]}</Tag>
+              <Tag color={o === "complete" || o === "refused" ? "default" : "warning"}>{OUTCOME_LABEL[o]}</Tag>
               {r.sourceAvailable === false && <Tag color="red" title="回答或其依据的前序对话的来源已撤回、删除或无法核验">来源已失效</Tag>}
             </>
           ),
@@ -237,7 +239,14 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
               options={[{ value: "all", label: "全部" }, { value: "up", label: "赞" }, { value: "down", label: "踩" }, { value: "none", label: "未评价" }]} />
             <Card className="doc-table">
               {!data && !error && <div className="state-pad"><LoadingList /></div>}
-              {data?.items.length === 0 && <EmptyState icon="chat" title="暂无问答记录" description="员工在问答工作台或挂件中提问后，记录会出现在这里。" />}
+              {data?.items.length === 0 && (
+                <EmptyState
+                  icon="chat"
+                  title={filter === "all" ? "暂无问答记录" : "没有符合筛选的记录"}
+                  description={filter === "all" ? "员工在问答工作台或挂件中提问后，记录会出现在这里。" : "当前筛选下没有记录。"}
+                  action={filter === "all" ? undefined : <Button size="small" onClick={() => setFilter("all")}>重置筛选</Button>}
+                />
+              )}
               {data && data.items.length > 0 && <RecordsTable items={data.items} onStatus={(m, s, c) => void onStatus(m, s, c)}
                 onClose={(r, s) => void onClose(r, s)} onHistory={(r) => void onHistory(r)} onCandidate={(r) => void onCandidate(r)}
                 onTrace={(r) => void onTrace(r)} />}

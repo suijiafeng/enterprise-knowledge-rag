@@ -1,5 +1,6 @@
-import { Alert, Card, Col, Row, Table, Tag, Typography } from "antd";
+import { Alert, Card, Table, Tag, Typography } from "antd";
 import type { EvalRun } from "../../api/client";
+import { MetricStrip } from "../../components/MetricStrip";
 import { metricCards } from "./LiveEvaluation";
 import { decimal, metricRows, parameterRows, ratioText } from "./evalPanel";
 
@@ -20,7 +21,7 @@ export function PublicEvaluation({ snapshot }: { snapshot: ExampleSnapshot }) {
           <Typography.Title level={3} className="page-title">评测中心</Typography.Title>
           <Typography.Text type="secondary" className="page-sub">未登录 · 只读示例 · 不能查看企业知识库里的评测</Typography.Text>
         </div>
-        <Tag color="gold">示例</Tag>
+        <Tag>示例</Tag>
       </div>
       <Alert type="warning" showIcon className="scaffold-alert" title="示例运行" description={snapshot.notice} />
       {snapshot.runs.length === 0 && <Card>还没有随仓库发布的示例运行。</Card>}
@@ -30,17 +31,7 @@ export function PublicEvaluation({ snapshot }: { snapshot: ExampleSnapshot }) {
             示例运行 · K {selected.k} · {selected.rerankEnabled ? `重排前 ${selected.rerankPool ?? "—"} 条` : "未重排"}
             {selected.judge ? ` · 评审 ${selected.judge}` : ""} · 模型 {selected.chatModel ?? selected.model ?? "—"}
           </Typography.Text>
-          <Row gutter={[16, 16]}>
-            {metricCards(selected.summary, selected.k).map((card) => (
-              <Col key={card.title} xs={24} sm={12} xl={8}>
-                <Card className="metric-card">
-                  <div className="metric-title">{card.title}</div>
-                  <div className="metric-value">{card.value}</div>
-                  <div className="metric-delta down">{card.sub}</div>
-                </Card>
-              </Col>
-            ))}
-          </Row>
+          <MetricStrip items={metricCards(selected.summary, selected.k).map((card) => ({ title: card.title, value: card.value, note: card.sub, trend: "flat" as const }))} />
           <Card size="small" title="示例运行列表">
             <Table<EvalRun> size="small" rowKey="id" pagination={false} dataSource={snapshot.runs} scroll={{ x: 640 }}
               columns={[

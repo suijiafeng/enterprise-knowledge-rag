@@ -222,7 +222,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
                   <>
                     <AnswerText text={m.answer ?? ""} citationCount={m.citations.length} activeIndex={m.id === selected ? active : undefined} onCite={setActive} />
                     <div className="answer-foot">
-                      <Tag color="blue">{VALIDATED_NOTE}</Tag>
+                      <Tag>{VALIDATED_NOTE}</Tag>
                       {m.stale && <Tag color="orange">所依据版本已不是当前生效版本</Tag>}
                     </div>
                     <FeedbackBar current={m.feedback} onSubmit={async (body) => {

@@ -19,9 +19,10 @@ describe("admin shell", () => {
     expect(html).toContain("metadata-only");
   });
 
-  it("keeps unimplemented entry points disabled", () => {
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*新建问答/s);
-    expect(html).toMatch(/<input[^>]*disabled/);
+  it("does not render controls that have no action", () => {
+    expect(html).not.toContain("搜索文档");
+    expect(html).not.toContain("新建问答");
+    expect(html).not.toMatch(/<input[^>]*disabled/);
   });
 
   it("shows sample pages only without a session, and real pages once a knowledge base is selected", async () => {

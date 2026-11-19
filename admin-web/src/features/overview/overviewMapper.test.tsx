@@ -31,7 +31,7 @@ describe("live overview", () => {
     expect(rows["向量模型"]).toBe("ollama:bge-m3");
     expect(rows["向量维度"]).toBe("1024");
     expect(rows["索引类型"]).toContain("精确检索");
-    expect(rows["最近同步"]).toBe("2026-10-14 13:00");
+    expect(rows["最近同步"]).toBe("2026-10-14 13:00:00");
   });
 
   it("keeps other people's questions hidden and labels the page as live", () => {

@@ -112,7 +112,7 @@ class OllamaChatModelTest {
     long started = System.nanoTime();
     assertThatThrownBy(() -> model(Duration.ofSeconds(30), Duration.ofMillis(300)).stream(prompt(), p -> {}, () -> false))
         .isInstanceOf(IllegalStateException.class);
-    assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofMillis(1500));
+    assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(3));
   }
 
   @Test

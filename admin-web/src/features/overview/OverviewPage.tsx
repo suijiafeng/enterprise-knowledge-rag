@@ -1,9 +1,18 @@
 import { Button, Card, Col, Row, Table, Tag, Typography } from "antd";
 import { IndexStatusTag, type IndexStatus } from "../../components/IndexStatusTag";
+import { MetricStrip } from "../../components/MetricStrip";
 import { DailyQuestionsChart } from "./DailyQuestionsChart";
 import type { OverviewData } from "./fixtures";
 
-export function OverviewPage({ data, live = false, onNewQuestion }: { data: OverviewData; live?: boolean; onNewQuestion?: () => void }) {
+const tone = (trend: OverviewData["metrics"][number]["trend"]) => (trend === "up" || trend === "bad" ? trend : "flat");
+
+export function OverviewPage({ data, live = false, onNewQuestion, onOpenDocuments, onOpenRecords }: {
+  data: OverviewData;
+  live?: boolean;
+  onNewQuestion?: () => void;
+  onOpenDocuments?: () => void;
+  onOpenRecords?: () => void;
+}) {
   return (
     <div className="page">
       <div className="page-head">
@@ -13,24 +22,12 @@ export function OverviewPage({ data, live = false, onNewQuestion }: { data: Over
             {live ? `实时数据 · 刷新于 ${data.updatedAt}` : `示例数据更新于 ${data.updatedAt} · 未登录，不会自动刷新`}
           </Typography.Text>
         </div>
-        {live && onNewQuestion
-          ? <Button type="primary" onClick={onNewQuestion}>+ 新建问答</Button>
-          : <Button type="primary" disabled title="登录后可用">+ 新建问答</Button>}
+        {live && onNewQuestion ? <Button type="primary" onClick={onNewQuestion}>新建问答</Button> : null}
       </div>
 
-      <Row gutter={[16, 16]}>
-        {data.metrics.map((m) => (
-          <Col key={m.title} xs={24} sm={12} xl={6}>
-            <Card className="metric-card">
-              <div className="metric-title">{m.title}</div>
-              <div className="metric-value">{m.value}</div>
-              <div className={m.trend === "up" ? "metric-delta up" : "metric-delta down"}>
-                {m.trend === "up" ? "▲ " : m.trend === "down" ? "▼ " : ""}{m.delta}
-              </div>
-            </Card>
-          </Col>
-        ))}
+      <MetricStrip items={data.metrics.map((metric) => ({ title: metric.title, value: metric.value, note: metric.delta, trend: tone(metric.trend) }))} />
 
+      <Row gutter={[16, 16]}>
         <Col xs={24} xl={16}>
           <Card title={<>近 7 日问答量 <span className="card-unit">单位：次</span></>}>
             <DailyQuestionsChart data={data.dailyQuestions} />
@@ -50,14 +47,15 @@ export function OverviewPage({ data, live = false, onNewQuestion }: { data: Over
         </Col>
 
         <Col xs={24} xl={12}>
-          <Card title="最近入库文档" extra={<Typography.Text type="secondary">查看全部 →</Typography.Text>}>
+          <Card title="最近入库文档" extra={onOpenDocuments ? <Button type="link" size="small" onClick={onOpenDocuments}>文档管理</Button> : null}>
             <Table
               size="small"
               pagination={false}
               rowKey="name"
               dataSource={data.recentDocuments}
+              scroll={{ x: 560 }}
               columns={[
-                { title: "文档", dataIndex: "name" },
+                { title: "文档", dataIndex: "name", fixed: "left", width: 220, ellipsis: true, render: (name: string) => <span className="clip" title={name}>{name}</span> },
                 { title: "切块", dataIndex: "chunks", render: (v: number | null) => v ?? "—" },
                 {
                   title: "状态",
@@ -70,14 +68,15 @@ export function OverviewPage({ data, live = false, onNewQuestion }: { data: Over
           </Card>
         </Col>
         <Col xs={24} xl={12}>
-          <Card title="最近问答" extra={<Typography.Text type="secondary">查看全部 →</Typography.Text>}>
+          <Card title="最近问答" extra={onOpenRecords ? <Button type="link" size="small" onClick={onOpenRecords}>问答记录</Button> : null}>
             <Table
               size="small"
               pagination={false}
               rowKey="question"
               dataSource={data.recentQuestions}
+              scroll={{ x: 480 }}
               columns={[
-                { title: "问题", dataIndex: "question" },
+                { title: "问题", dataIndex: "question", fixed: "left", width: 220, ellipsis: true, render: (question: string) => <span className="clip" title={question}>{question}</span> },
                 { title: "引用", dataIndex: "citations", render: (n: number) => `${n} 篇` },
                 { title: "时间", dataIndex: "askedAt", className: "mono" },
               ]}

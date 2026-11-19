@@ -1,4 +1,4 @@
-import { Alert, Avatar, Breadcrumb, ConfigProvider, Input, Layout, Menu } from "antd";
+import { Alert, Breadcrumb, ConfigProvider, Layout, Menu } from "antd";
 import { useState, type ReactNode } from "react";
 import type { ApiClient, Status } from "./api/client";
 import { ConnectControl, SessionProvider, useSession } from "./session";
@@ -55,9 +55,10 @@ export function pageFor(key: NavKey, ctx: PageContext = {}): ReactNode {
     return <div className="page"><EmptyState icon="doc" title="没有可访问的知识库" description="当前账号没有任何知识库授权，或知识库列表尚未返回；请联系管理员授权后再试。" /></div>;
   }
   if (key === "overview") {
+    const links = { onOpenDocuments: () => ctx.navigate?.("documents"), onOpenRecords: () => ctx.navigate?.("records") };
     return live
-      ? <LiveOverview {...live} zone={ctx.status?.businessTimeZone ?? "Asia/Shanghai"} onNewQuestion={() => ctx.navigate?.("qa")} />
-      : <OverviewPage data={overviewFixture} />;
+      ? <LiveOverview {...live} zone={ctx.status?.businessTimeZone ?? "Asia/Shanghai"} onNewQuestion={() => ctx.navigate?.("qa")} {...links} />
+      : <OverviewPage data={overviewFixture} {...links} />;
   }
   if (key === "documents") return live ? <LiveDocuments {...live} status={ctx.status} /> : <DocumentsPage data={documentsFixture} />;
   if (key === "qa") return live ? <LiveQa {...live} modelEnabled={ctx.status?.modelEnabled ?? false} /> : <QaWorkbench data={qaFixture} />;
@@ -73,7 +74,32 @@ type Mode = "login" | "sample";
 
 export function App({ initialMode = "login" }: { initialMode?: Mode }) {
   return (
-    <ConfigProvider button={{ autoInsertSpace: false }} theme={{ token: { colorPrimary: "#2f5bd3", borderRadius: 8 } }}>
+    <ConfigProvider button={{ autoInsertSpace: false }} theme={{
+      token: {
+        colorPrimary: "#18181B",
+        colorInfo: "#3F3F46",
+        colorLink: "#18181B",
+        colorSuccess: "#3F6212",
+        colorWarning: "#A16207",
+        colorError: "#9F1239",
+        colorBgLayout: "#FAFAFA",
+        colorBorder: "#E4E4E7",
+        colorBorderSecondary: "#E4E4E7",
+        colorText: "#18181B",
+        colorTextSecondary: "#52525B",
+        borderRadius: 6,
+        borderRadiusLG: 8,
+        fontSize: 14,
+        fontFamily: 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+        boxShadowSecondary: "0 1px 2px rgba(0,0,0,0.04)",
+      },
+      components: {
+        Button: { primaryShadow: "none", defaultShadow: "none", dangerShadow: "none" },
+        Layout: { bodyBg: "#FAFAFA", headerBg: "#FFFFFF", siderBg: "#FFFFFF" },
+        Menu: { itemBorderRadius: 6, itemSelectedBg: "#F4F4F5", itemSelectedColor: "#18181B", itemHoverBg: "#F4F4F5", activeBarBorderWidth: 0 },
+      },
+    }}>
       <SessionProvider>
         <Entry initialMode={initialMode} />
       </SessionProvider>
@@ -101,7 +127,7 @@ function Shell({ onLogin }: { onLogin: () => void }) {
   return (
     <>
       <Layout className="shell">
-        <Layout.Sider width={208} className="shell-sider" breakpoint="lg" collapsedWidth={0}>
+        <Layout.Sider theme="light" width={208} className="shell-sider" breakpoint="lg" collapsedWidth={0}>
           <div className="brand">
             <span className="brand-mark" aria-hidden="true">知</span>
             <div>
@@ -110,18 +136,17 @@ function Shell({ onLogin }: { onLogin: () => void }) {
             </div>
           </div>
           <Menu
-            theme="dark"
+            theme="light"
             mode="inline"
             className="shell-menu"
             selectedKeys={[active]}
             onClick={({ key }) => setActive(key as NavKey)}
-            items={NAV.map((n) => ({ key: n.key, label: n.label, icon: <span className="nav-dot" /> }))}
+            items={NAV.map((n) => ({ key: n.key, label: n.label }))}
           />
           <div className="shell-user">
-            <Avatar className="shell-avatar">访</Avatar>
             <div>
               <div className="brand-name">{session.client ? "开发令牌" : "未连接"}</div>
-              <div className="brand-sub">{session.client ? "本地 JWT · 生产需 IdP" : "示例数据"}</div>
+              <div className="brand-sub">{session.client ? "本地 JWT，生产需 IdP" : "示例数据"}</div>
             </div>
           </div>
         </Layout.Sider>
@@ -129,7 +154,6 @@ function Shell({ onLogin }: { onLogin: () => void }) {
           <Layout.Header className="shell-header">
             <Breadcrumb items={[{ title: kbName ?? "知识库" }, { title: current.label }]} />
             <div className="shell-tools">
-              <Input className="shell-search" placeholder="搜索文档、问答…" disabled aria-label="搜索（未实现）" />
               <ConnectControl onLogin={onLogin} />
             </div>
           </Layout.Header>

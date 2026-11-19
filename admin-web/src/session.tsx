@@ -65,7 +65,7 @@ export function ConnectControl({ onLogin }: { onLogin: () => void }) {
   if (client) {
     return (
       <Space>
-        <Tag color="green">已连接本地服务</Tag>
+        <Tag>已连接本地服务</Tag>
         <Select
           size="small"
           className="kb-select"
@@ -81,7 +81,7 @@ export function ConnectControl({ onLogin }: { onLogin: () => void }) {
   }
   return (
     <>
-      <Tag color="orange">示例数据</Tag>
+      <Tag>示例数据</Tag>
       <Button size="small" type="primary" onClick={onLogin}>登录</Button>
     </>
   );

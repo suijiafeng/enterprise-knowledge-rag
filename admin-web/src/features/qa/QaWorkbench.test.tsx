@@ -13,9 +13,9 @@ describe("qa workbench", () => {
     expect(html).toContain(qaFixture.sample.question);
   });
 
-  it("keeps sending disabled because no chat route exists", () => {
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*发\s*送/s);
-    expect(html).toMatch(/<textarea[^>]*disabled/);
+  it("does not render a composer while chat is unavailable", () => {
+    expect(html).not.toMatch(/<textarea/);
+    expect(html).not.toMatch(/>发\s*送</);
     expect(html).toContain("问答服务未接入");
   });
 

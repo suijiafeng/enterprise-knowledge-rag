@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Input, Progress, Tag, Typography } from "antd";
+import { Alert, Button, Card, Progress, Tag, Typography } from "antd";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { AnswerText } from "./AnswerText";
 import { chatReducer, initialChatState, type Citation } from "./chatState";
@@ -52,14 +52,13 @@ export function QaWorkbench({ data }: { data: QaData }) {
       <div className="page-head">
         <div>
           <Typography.Title level={3} className="page-title">问答工作台</Typography.Title>
-          <Typography.Text type="secondary" className="page-sub">基于企业知识库的问答 · 所有回答均可核对引用来源</Typography.Text>
+          <Typography.Text type="secondary" className="page-sub">示例会话与离线回放。登录后连接本地服务提问。</Typography.Text>
         </div>
       </div>
 
       <div className={cols}>
         {historyOpen && (
           <Card size="small" title="会话历史" extra={<Button type="text" size="small" aria-label="收起会话历史" onClick={() => setHistoryOpen(false)}>‹</Button>}>
-            <Button type="primary" block disabled title="问答服务未接入">+ 新会话</Button>
             <ul className="session-list">
               {data.sessions.map((s) => (
                 <li key={s.id}>
@@ -84,16 +83,15 @@ export function QaWorkbench({ data }: { data: QaData }) {
               <div className="state-label">完成态 · 示例</div>
               <div className="answer-card">
                 <div className="answer-head">
-                  <span className="answer-avatar" aria-hidden="true">AI</span>
                   <div>
                     <div className="answer-name">知库助手</div>
-                    <div className="answer-meta">模型未接入 · 检索未接入</div>
+                    <div className="answer-meta">模型未接入，检索未接入</div>
                   </div>
                 </div>
                 <AnswerText text={data.sample.answer} citationCount={data.sample.citations.length} activeIndex={active} onCite={setActive} />
                 <CitationChips citations={data.sample.citations} />
                 <div className="answer-foot">
-                  <Tag color="blue">{VALIDATED_NOTE}</Tag>
+                  <Tag>{VALIDATED_NOTE}</Tag>
                   <span>耗时：未接入</span>
                 </div>
               </div>
@@ -117,7 +115,7 @@ export function QaWorkbench({ data }: { data: QaData }) {
               <>
                 <AnswerText text={stream.text} citationCount={stream.citations.length} onCite={() => {}} />
                 <CitationChips citations={stream.citations} />
-                <Tag color="blue">{VALIDATED_NOTE}</Tag>
+                <Tag>{VALIDATED_NOTE}</Tag>
                 <Button size="small" onClick={replay}>再次回放</Button>
               </>
             )}
@@ -129,20 +127,9 @@ export function QaWorkbench({ data }: { data: QaData }) {
             )}
           </div>
 
-          <div className="state-label">快捷问题</div>
-          <div className="quick-list">
-            {data.quickQuestions.map((q) => (
-              <Button key={q} shape="round" size="small" disabled title="问答服务未接入">{q}</Button>
-            ))}
-          </div>
-
-          <div className="composer">
-            <Input.TextArea rows={3} placeholder="输入问题…（问答服务未接入）" disabled aria-label="问题输入（未实现）" />
-            <div className="composer-foot">
-              <span>检索策略待确认（T4）</span>
-              <Button type="primary" disabled title="问答服务未接入">发送</Button>
-            </div>
-          </div>
+          <Typography.Paragraph type="secondary" className="page-sub">
+            问答服务未接入。示例模式只回放上面的离线事件，不能发送问题。登录后可以问：{data.quickQuestions.join("、")}。
+          </Typography.Paragraph>
         </Card>
 
         {sourcesOpen && (
