@@ -123,10 +123,10 @@ docker compose up -d postgres
 ```
 
 ```bash
-# 后端不会自动读取 .env，需先导出到环境变量
-set -a; source .env; set +a
 cd server && mvn spring-boot:run
 ```
+
+从 `server/` 目录启动时，`application.yml` 的 `spring.config.import: optional:file:../.env[.properties]` 会读取仓库根目录的 `.env`。按 properties 解析，不要写 `export`。默认监听 `127.0.0.1:8080`。改端口用 `SERVER_PORT=8090`，或 `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8090`。
 
 首次启动由 Flyway 建表。可选写入虚构示例知识库与授权：
 
@@ -140,7 +140,7 @@ docker compose exec -T postgres psql -U zhiku_local -d zhiku < scripts/dev-seed.
 node scripts/dev-token.mjs --user 00000000-0000-4000-8000-0000000000a1 --enterprise 00000000-0000-4000-8000-0000000000e1 --roles KB_OPERATOR,EMPLOYEE
 ```
 
-启动管理端（Vite 代理到 127.0.0.1:8080），在登录页粘贴令牌：
+启动管理端。开发服务器把 `/api` 代理到 `ZHIKU_DEV_PROXY`（默认 `http://127.0.0.1:8080`，可写在仓库根 `.env`）。端口改过时把这个变量改成同一个地址。在登录页粘贴令牌：
 
 ```bash
 cd admin-web && npm ci && npm run dev
