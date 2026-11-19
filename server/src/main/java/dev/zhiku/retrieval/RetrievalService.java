@@ -58,14 +58,34 @@ public class RetrievalService {
     return searchAuthorized(scope, kbId, question, k, at, origin, traceId, 0);
   }
 
+  /** pool 是送入重排的向量候选数，必须不小于最终保留的 k，且不超过 maxK。 */
+  public record Rerank(boolean enabled, int pool) {
+    public static Rerank off() {
+      return new Rerank(false, 0);
+    }
+  }
+
   public Result searchAuthorized(AccessScope scope, UUID kbId, String question, Integer k, Instant at, String origin, UUID traceId, int configVersion) {
-    int limit = k == null ? settings.defaultK() : k;
-    if (limit < 1 || limit > settings.maxK()) throw ApiException.unprocessable("k must be between 1 and " + settings.maxK());
+    return searchAuthorized(scope, kbId, question, k, at, origin, traceId, configVersion, Rerank.off());
+  }
+
+  public Result searchAuthorized(AccessScope scope, UUID kbId, String question, Integer k, Instant at, String origin, UUID traceId, int configVersion,
+      Rerank rerank) {
+    var use = rerank == null ? Rerank.off() : rerank;
+    int keep = k == null ? settings.defaultK() : k;
+    if (keep < 1 || keep > settings.maxK()) throw ApiException.unprocessable("k must be between 1 and " + settings.maxK());
+    int fetch = keep;
+    if (use.enabled()) {
+      if (use.pool() < keep || use.pool() > settings.maxK()) {
+        throw ApiException.unprocessable("rerankPool must be between k and " + settings.maxK());
+      }
+      fetch = use.pool();
+    }
     var provider = embeddings.getIfAvailable();
-    traces.insert(traceId, scope, kbId, origin, at, limit, provider == null ? null : provider.model(), configVersion);
+    traces.insert(traceId, scope, kbId, origin, at, keep, provider == null ? null : provider.model(), configVersion);
     var rewrite = Stage.skipped("rewrite", "查询改写", "未改写，保留原问题");
     var later = List.of(Stage.skipped("lexical", "词法召回", "未启用"), Stage.skipped("fusion", "融合排序", "未启用"),
-        Stage.skipped("rerank", "重排", "未接入"));
+        Stage.skipped("rerank", "重排", "未开启"));
     var vectorStarted = Instant.now();
     if (provider == null) {
       traces.addStages(traceId, stages(rewrite, Stage.timed("vector", "向量召回", "failed", vectorStarted, "未配置 embedding 模型"), later));
@@ -84,9 +104,15 @@ public class RetrievalService {
     // 因此请求进行中提交的变更不会被披露。之后的变更由调用方检查。
     var eligible = documents.eligibleVersionIds(scope, kbId, at);
     var candidates = grants.grantedKnowledgeBases(scope.enterpriseId(), scope.userId()).contains(kbId)
-        ? repository.nearest(eligible, provider.model(), query, limit) : List.<Retrieval.Candidate>of();
+        ? repository.nearest(eligible, provider.model(), query, fetch) : List.<Retrieval.Candidate>of();
     var vector = Stage.timed("vector", "向量召回", "success", vectorStarted,
         "精确检索 · " + eligible.size() + " 个合格版本 · " + candidates.size() + " 条候选");
+    if (use.enabled()) {
+      var rerankStarted = Instant.now();
+      candidates = LexicalReranker.rerank(question, candidates, keep);
+      later = List.of(Stage.skipped("lexical", "词法召回", "未启用"), Stage.skipped("fusion", "融合排序", "未启用"),
+          Stage.timed("rerank", "重排", "success", rerankStarted, "字符二元组 BM25 与向量分加权 · 保留 " + candidates.size() + " 条"));
+    }
     var stages = stages(rewrite, vector, later);
     traces.setDimension(traceId, query.length);
     traces.addStages(traceId, stages);

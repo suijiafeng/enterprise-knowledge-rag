@@ -104,6 +104,68 @@ class ChatRequestTest extends IntegrationTest {
         .andExpect(jsonPath("$.status").value("complete"))
         .andExpect(jsonPath("$.messageId").value(messageId.toString()))
         .andExpect(jsonPath("$.conversationId").isString())
+        .andExpect(jsonPath("$.answer").value("年假按司龄计算[1]。"));
+    var completed = jdbc.queryForObject("SELECT completed_at IS NOT NULL FROM chat_request WHERE client_request_id = ?", Boolean.class, id);
+    assertThat(completed).isTrue();
+  }
+
+  @Test
+  void historyPageBreaksTiesOnIdWhenTimestampsMatch() throws Exception {
+    var first = UUID.randomUUID();
+    assertThat(stream(employee, body(first, "年假有几天?"))).contains("event:done");
+    var conversation = jdbc.queryForObject("SELECT conversation_id FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ?", UUID.class, kb);
+    var second = UUID.randomUUID();
+    assertThat(stream(employee, "{\"kbId\":\"" + kb + "\",\"question\":\"那试用期呢?\",\"clientRequestId\":\"" + second
+        + "\",\"conversationId\":\"" + conversation + "\"}")).contains("event:done");
+    jdbc.update("UPDATE message SET created_at = '2026-01-01T00:00:00Z' WHERE conversation_id = ?", conversation);
+    // 全量套件里本线程可能还留着未提交事务；提交后，另一次请求连接才能看到相同的时间。
+    jdbc.execute((java.sql.Connection connection) -> {
+      if (!connection.getAutoCommit()) connection.commit();
+      return null;
+    });
+    var ordered = jdbc.queryForList("SELECT id::text FROM message WHERE conversation_id = ? ORDER BY id", String.class, conversation);
+    assertThat(ordered).hasSize(2);
+
+    var latestBody = mvc.perform(get("/api/conversations/{id}/messages/page", conversation).param("limit", "1")
+            .header(HttpHeaders.AUTHORIZATION, token(employee)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.items.length()").value(1))
+        .andExpect(jsonPath("$.nextCursor").isString())
+        .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+    var latestJson = new com.fasterxml.jackson.databind.ObjectMapper().readTree(latestBody);
+    var laterId = java.util.UUID.fromString(latestJson.at("/items/0/id").asText());
+    var laterAt = java.time.Instant.parse(latestJson.at("/items/0/createdAt").asText());
+    var earlierBody = mvc.perform(get("/api/conversations/{id}/messages/page", conversation).param("limit", "1")
+            .param("before", latestJson.get("nextCursor").asText())
+            .header(HttpHeaders.AUTHORIZATION, token(employee)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.items.length()").value(1))
+        .andExpect(jsonPath("$.nextCursor").value(org.hamcrest.Matchers.nullValue()))
+        .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+    var earlierJson = new com.fasterxml.jackson.databind.ObjectMapper().readTree(earlierBody);
+    var earlierId = java.util.UUID.fromString(earlierJson.at("/items/0/id").asText());
+    var earlierAt = java.time.Instant.parse(earlierJson.at("/items/0/createdAt").asText());
+    assertThat(java.util.List.of(earlierId.toString(), laterId.toString())).containsExactlyInAnyOrderElementsOf(ordered);
+    assertThat(ChatCursor.compare(earlierAt, earlierId, laterAt, laterId)).isNegative();
+    assertThat(earlierAt.toEpochMilli()).isEqualTo(laterAt.toEpochMilli());
+    mvc.perform(get("/api/conversations/{id}/messages/page", conversation).param("before", "%%%")
+            .header(HttpHeaders.AUTHORIZATION, token(employee)))
+        .andExpect(status().isUnprocessableEntity());
+  }
+
+  @Test
+  void withdrawnSourceIsHiddenFromHistoryAndFromTheReceipt() throws Exception {
+    var id = UUID.randomUUID();
+    assertThat(stream(employee, body(id, "年假有几天?"))).contains("event:done");
+    jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE document_id IN (SELECT id FROM document WHERE kb_id = ?)", kb);
+    var conversation = jdbc.queryForObject("SELECT conversation_id FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ?", UUID.class, kb);
+    mvc.perform(get("/api/conversations/{id}/messages", conversation).header(HttpHeaders.AUTHORIZATION, token(employee)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].hidden").value(true))
+        .andExpect(jsonPath("$[0].reason").value("SOURCE_UNAVAILABLE"))
+        .andExpect(jsonPath("$[0].answer").value(org.hamcrest.Matchers.nullValue()));
+    lookup(employee, id).andExpect(status().isOk())
+        .andExpect(jsonPath("$.hidden").value(true))
         .andExpect(jsonPath("$.answer").doesNotExist());
   }
 

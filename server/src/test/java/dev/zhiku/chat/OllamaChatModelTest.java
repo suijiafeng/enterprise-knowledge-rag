@@ -158,6 +158,34 @@ class OllamaChatModelTest {
   }
 
   @Test
+  void completeReturnsContentAndTokenCountsWhenOllamaSendsThem() {
+    behaviour = exchange -> {
+      var request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+      assertThat(request).contains("\"stream\":false");
+      var body = "{\"message\":{\"content\":\"十五条[1]\"},\"prompt_eval_count\":11,\"eval_count\":4}".getBytes(StandardCharsets.UTF_8);
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+    };
+    var completion = model(Duration.ofSeconds(5), Duration.ofSeconds(5)).complete(prompt());
+    assertThat(completion.text()).isEqualTo("十五条[1]");
+    assertThat(completion.promptTokens()).isEqualTo(11);
+    assertThat(completion.completionTokens()).isEqualTo(4);
+  }
+
+  @Test
+  void completeLeavesTokensEmptyWhenTheProviderOmitsThem() {
+    behaviour = exchange -> {
+      var body = "{\"message\":{\"content\":\"ok\"}}".getBytes(StandardCharsets.UTF_8);
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+    };
+    var completion = model(Duration.ofSeconds(5), Duration.ofSeconds(5)).complete(prompt());
+    assertThat(completion.text()).isEqualTo("ok");
+    assertThat(completion.promptTokens()).isNull();
+    assertThat(completion.completionTokens()).isNull();
+  }
+
+  @Test
   void anOverlongLineIsRejected() {
     behaviour = exchange -> {
       exchange.sendResponseHeaders(200, 0);

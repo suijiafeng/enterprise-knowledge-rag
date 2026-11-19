@@ -32,7 +32,7 @@ export function traceFromResult(result: TraceResult, knowledgeBase: string, scop
       { label: "检索方式", value: "授权范围内精确向量检索（基线）" },
       { label: "Embedding 模型 / 维度", value: `${result.embeddingModel} · ${result.dimension} 维` },
       { label: "融合", value: "未启用" },
-      { label: "重排", value: "未接入" },
+      { label: "重排", value: result.stages.find((s) => s.key === "rerank")?.summary ?? "未开启" },
       { label: "最低证据门槛", value: "待校准；相似度不等于回答可信度" },
       { label: "查询时点", value: result.at },
     ],

@@ -14,6 +14,9 @@ public class TestChatModel implements ChatModel {
   /** 在第 n 个片段（从 0 开始）交给调用方之后运行，例如在流中途撤销访问权限。 */
   public volatile java.util.function.IntConsumer afterPiece = n -> {};
   public volatile List<Message> lastPrompt = List.of();
+  /** 非空时 complete 原样返回；默认 null，表示这个替身不提供 token 用量。 */
+  public volatile Integer promptTokens = null;
+  public volatile Integer completionTokens = null;
 
   public void reset() {
     script = messages -> "年假按司龄计算[1]。";
@@ -21,11 +24,20 @@ public class TestChatModel implements ChatModel {
     failMidway = false;
     afterPiece = n -> {};
     lastPrompt = List.of();
+    promptTokens = null;
+    completionTokens = null;
   }
 
   @Override
   public String model() {
     return "test-scripted";
+  }
+
+  @Override
+  public Completion complete(List<Message> messages) {
+    var text = new StringBuilder();
+    stream(messages, text::append, () -> false);
+    return new Completion(text.toString(), promptTokens, completionTokens);
   }
 
   @Override

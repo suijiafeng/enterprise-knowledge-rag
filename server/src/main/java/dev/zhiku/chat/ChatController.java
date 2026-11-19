@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -132,5 +133,12 @@ class ChatController {
   @GetMapping("/api/conversations/{id}/messages")
   List<ChatService.MessageView> messages(@PathVariable UUID id) {
     return chat.messages(knowledgeBases.requireScope(), id);
+  }
+
+  /** 历史分页。游标是 (created_at, id)；时间相同时按 id 取下一页起点。 */
+  @GetMapping("/api/conversations/{id}/messages/page")
+  ChatService.MessagePage messagePage(@PathVariable UUID id, @RequestParam(defaultValue = "20") int limit,
+      @RequestParam(required = false) String before) {
+    return chat.page(knowledgeBases.requireScope(), id, limit, before);
   }
 }

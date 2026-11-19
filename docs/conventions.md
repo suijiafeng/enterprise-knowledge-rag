@@ -9,7 +9,7 @@ TypeScript strict；组件 UpperCamelCase，hooks useX；按 feature 放代码�
 
 ## API / SSE
 先改 contracts/openapi.yaml，再改双端类型/测试。HTTP 错误采用 code/message/requestId（正文不包含文档、SQL、凭据或堆栈）；401 未认证，403 无权，409 冲突，422 参数不满足，429 限流，503 依赖不可用；统一由 ApiExceptionHandler 转换。
-POST + fetch SSE：start → draft → validated → done；error 为终止失败。仅收到 done 且之前有 validated 才能视为完整；validated 中 validation=metadata-only，UI 显示“来源信息检查通过，请核对内容”。中断/错误丢弃可用答案状态，不能自动重试 POST 造成重复计费；客户端每次提问带 clientRequestId，断线后按编号查询原请求结果。
+POST + fetch SSE：start → draft → validated → done；error 为终止失败。仅收到 done 且之前有 validated 才能视为完整；validated 中 validation=metadata-only，UI 显示“来源信息检查通过，请核对内容”。中断/错误丢弃可用答案状态，不能自动重试 POST 造成重复计费。客户端每次提问生成 clientRequestId 并记在 sessionStorage（只记编号和问题，不记令牌）；SSE 的 id/retry 不触发重连。断线、刷新或网络恢复后先 GET /api/chat/requests/{clientRequestId}，查到结果就展示，不重新 POST。
 
 ## SQL / 测试 / 依赖
 迁移 `V<number>__description.sql`，已发布 migration 不改，新增前向版本；禁止生产自动 clean/drop 或 ORM ddl-auto=update。必须验证空库迁移、升级、权限隔离和数据回滚方案。

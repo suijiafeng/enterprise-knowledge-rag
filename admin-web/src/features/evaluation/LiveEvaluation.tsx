@@ -1,22 +1,30 @@
-import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Checkbox, Col, Input, InputNumber, Row, Select, Space, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { createRequestGate } from "../../api/requestGate";
-import { ApiError, type ApiClient, type DocumentInfo, type EvalCase, type EvalResult, type EvalRun, type EvalSummary, type EvidenceInput, type CaseDetails } from "../../api/client";
+import { ApiError, type ApiClient, type DocumentInfo, type EvalCase, type EvalResult, type EvalSummary, type EvidenceInput, type CaseDetails } from "../../api/client";
 import { EmptyState, ErrorState, LoadingList } from "../../components/StateViews";
+import { EvalPanel } from "./EvalPanel";
 
 const LABEL: Record<EvalCase["label"], string> = { answerable: "可回答", clarify: "应澄清", handoff: "应转人工" };
 const pct = (n: number, d: number) => (d ? ` · ${((n / d) * 100).toFixed(1)}%` : "");
 
-/** 只显示某次运行实际测得的检索指标；回答准确率需要人工评审，不在此显示。 */
+/** 只显示某次运行实际测得的指标。没有测到的分数是破折号，不补成 0，也不显示人工准确率。 */
 export function metricCards(summary: EvalSummary | undefined, k: number) {
   if (!summary) {
-    return [`Hit@${k}（证据位置覆盖）`, "证据 Recall", "P95 检索延迟", "未计入分母"].map((title) => ({ title, value: "—", sub: "尚未运行" }));
+    return [`Hit@${k}（片段完整覆盖）`, `Recall@${k}（片段）`, "MRR", "检索 P50 / P95", "忠实度 / 相关性", "未计入分母"]
+      .map((title) => ({ title, value: "—", sub: "尚未运行" }));
   }
+  const retrieval = summary.p50Ms == null && summary.p95Ms == null ? "—" : `${summary.p50Ms ?? "—"} / ${summary.p95Ms ?? "—"} ms`;
+  const judged = summary.faithfulness == null && summary.relevance == null
+    ? "—"
+    : `${summary.faithfulness == null ? "—" : summary.faithfulness.toFixed(3)} / ${summary.relevance == null ? "—" : summary.relevance.toFixed(3)}`;
   return [
-    { title: `Hit@${k}（证据位置覆盖）`, value: `${summary.hit.num}/${summary.hit.den}`, sub: pct(summary.hit.num, summary.hit.den).slice(3) || "—" },
-    { title: "证据 Recall", value: `${summary.recall.num}/${summary.recall.den}`,
-      sub: summary.recallMacro === null ? "—" : `宏平均 ${(summary.recallMacro * 100).toFixed(1)}%` },
-    { title: "P95 检索延迟", value: summary.p95Ms === null ? "—" : `${summary.p95Ms} ms`, sub: "仅检索，不含生成" },
+    { title: `Hit@${k}（片段完整覆盖）`, value: `${summary.hit.num}/${summary.hit.den}`, sub: pct(summary.hit.num, summary.hit.den).slice(3) || "—" },
+    { title: `Recall@${k}（片段）`, value: `${summary.recall.num}/${summary.recall.den}`,
+      sub: summary.recallMacro == null ? "—" : `宏平均 ${(summary.recallMacro * 100).toFixed(1)}%` },
+    { title: "MRR", value: summary.mrr == null ? "—" : summary.mrr.toFixed(3), sub: "第一处相交切块的倒数名次" },
+    { title: "检索 P50 / P95", value: retrieval, sub: summary.p50E2eMs == null && summary.p95E2eMs == null ? "未测端到端延迟" : `端到端 ${summary.p50E2eMs ?? "—"} / ${summary.p95E2eMs ?? "—"} ms` },
+    { title: "忠实度 / 相关性", value: judged, sub: summary.judged ? `已评审 ${summary.judged} 题` : "本次未评审" },
     { title: "未计入分母", value: String(summary.prepFailed + (summary.sourceUnavailable ?? 0)),
       sub: `准备失败 ${summary.prepFailed}（无法映射到当前索引）· 来源失效 ${summary.sourceUnavailable ?? 0}（已撤回、删除或不在有效期）` },
   ];
@@ -27,8 +35,6 @@ export function resultTag(r: EvalResult) {
   if (r.mappingFailed) return "评测准备失败";
   return r.hit ? "命中" : "未命中";
 }
-
-const RESULT_COLOR: Record<string, string> = { 来源已失效: "default", 评测准备失败: "warning", 命中: "success", 未命中: "error" };
 
 export function evidenceEntry(versionId: string, quote: string, occurrence: number | undefined): EvidenceInput {
   return occurrence ? { versionId, quote: quote.trim(), occurrence } : { versionId, quote: quote.trim() };
@@ -89,6 +95,7 @@ export function CaseList({ cases, onApprove, onEdit }: { cases: EvalCase[]; onAp
           <li key={c.id} className="eval-case">
             <div>
               <Tag color={c.status === "approved" ? "green" : "orange"}>{c.status === "approved" ? "已批准" : "候选"}</Tag>
+              {c.source.startsWith("example:") && <Tag color="gold">示例</Tag>}
               <Tag>{LABEL[c.label]}</Tag>
               {missing.length > 0 && <Tag color="red">待补齐：{missing.join("、")}</Tag>}
               {legacy && <Tag>批准时未要求参考答案与必要事实</Tag>}
@@ -226,13 +233,12 @@ function EvidenceForm({ docs, initial, onSubmit, onCancel, submitLabel }: {
 
 export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: string }) {
   const [cases, setCases] = useState<EvalCase[]>();
-  const [run, setRun] = useState<EvalRun>();
   const [docs, setDocs] = useState<DocumentInfo[]>([]);
-  const [k, setK] = useState(5);
   const [editing, setEditing] = useState<EvalCase>();
   // 创建成功后重新挂载表单以清空输入，避免重复提交同一用例。
   const [formKey, setFormKey] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const [panelKey, setPanelKey] = useState(0);
+  const [approveImport, setApproveImport] = useState(false);
   const [error, setError] = useState<ApiError>();
 
   const fail = (e: unknown) => setError(e instanceof ApiError ? e : new ApiError(0, "NETWORK", "请求失败"));
@@ -240,10 +246,9 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
   const load = useCallback(async () => {
     const g = gate.current.next();
     try {
-      const [c, r, d] = await Promise.all([client.evalCases(kbId), client.latestRun(kbId), client.documents(kbId)]);
+      const [c, d] = await Promise.all([client.evalCases(kbId), client.documents(kbId)]);
       if (!gate.current.isCurrent(g)) return;
       setCases(c);
-      setRun(r ?? undefined);
       setDocs(d);
     } catch (e) {
       fail(e);
@@ -262,17 +267,14 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
     await load();
   };
 
-  const execute = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      setRun(await client.runEvaluation(kbId, k));
-    } catch (e) {
-      fail(e);
-    } finally {
-      setBusy(false);
-    }
+  const importFile = async (file: File) => {
+    const text = await file.text();
+    const contentType = file.name.toLowerCase().endsWith(".csv") ? "text/csv" : "application/json";
+    await act(() => client.importEvalCases(kbId, text, contentType, approveImport));
+    setPanelKey((value) => value + 1);
   };
+
+  const example = cases?.some((item) => item.source.startsWith("example:")) ?? false;
 
   return (
     <div className="page">
@@ -281,48 +283,33 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
           <Typography.Title level={3} className="page-title">评测中心</Typography.Title>
           <Typography.Text type="secondary" className="page-sub">
             {cases ? `${cases.length} 个用例 · ${cases.filter((c) => c.status === "approved").length} 个已批准` : "加载中"}
-            {run ? ` · 上次运行 ${new Date(run.createdAt).toLocaleString("zh-CN")} · ${run.model ?? "未检索"}` : " · 尚未运行"} · 检索评测，不调用模型
+            · 图表只使用已保存的评测运行
           </Typography.Text>
         </div>
-        <Space>
-          <InputNumber min={1} max={30} value={k} onChange={(v) => setK(v ?? 5)} addonBefore="K" aria-label="K" />
-          <Button type="primary" loading={busy} onClick={() => void execute()}>运行评测</Button>
-        </Space>
       </div>
       {error && <div className="scaffold-alert"><ErrorState code={error.code} message={error.message} requestId={error.requestId} /></div>}
-      {runWarnings(run?.summary).map((w) => <Alert key={w} type="warning" showIcon className="scaffold-alert" title={w} />)}
-      <Alert type="info" showIcon className="scaffold-alert" title="小样本只支持试点结论"
-        description="回答正确与完整、引用语义支持需要人工判定，本页暂不计算；不得把检索命中率当作回答质量。" />
+      {example && <Alert type="warning" showIcon className="scaffold-alert" title="当前知识库含示例评测集" description="来源以 example: 开头的用例是虚构示例，不是业务数据。" />}
+      <EvalPanel client={client} kbId={kbId} cases={cases ?? []} refreshKey={panelKey} />
       <Row gutter={[16, 16]}>
-        {metricCards(run?.summary, run?.k ?? k).map((m) => (
-          <Col key={m.title} xs={24} sm={12} xl={6}>
-            <Card className="metric-card">
-              <div className="metric-title">{m.title}</div>
-              <div className="metric-value">{m.value}</div>
-              <div className="metric-delta down">{m.sub}</div>
-            </Card>
-          </Col>
-        ))}
         <Col xs={24} xl={15}>
-          <Card size="small" title="评测明细">
-            {!run && <EmptyState icon="chart" title="暂无评测结果" description="批准至少一个用例后运行评测。" />}
-            {run && (
-              <Table<EvalResult> size="small" rowKey="caseId" pagination={false} dataSource={run.results} scroll={{ x: 640 }}
-                columns={[
-                  { title: "问题", dataIndex: "question" },
-                  { title: "证据命中", key: "e", className: "mono", render: (_, r) => (r.mappingFailed || r.sourceUnavailable ? "—" : `${r.evidenceHit}/${r.evidenceTotal}`) },
-                  { title: "延迟", dataIndex: "latencyMs", className: "mono", render: (v: number, r) => (r.mappingFailed || r.sourceUnavailable ? "—" : `${v} ms`) },
-                  { title: "结果", key: "r", render: (_, r) => <Tag color={RESULT_COLOR[resultTag(r)] ?? "default"}>{resultTag(r)}</Tag> },
-                ]} />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} xl={9}>
           <Card size="small" className="side-card" title="评测用例">
+            <div className="eval-toolbar">
+              <Checkbox checked={approveImport} onChange={(event) => setApproveImport(event.target.checked)}>导入后批准</Checkbox>
+              <label className="card-unit">
+                导入 JSON / CSV
+                <input aria-label="导入评测集" type="file" accept=".json,.csv,application/json,text/csv" onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void importFile(file);
+                }} />
+              </label>
+            </div>
             {!cases ? <LoadingList /> : (
               <CaseList cases={cases} onApprove={(c) => void act(() => client.approveEvalCase(kbId, c.id))} onEdit={setEditing} />
             )}
           </Card>
+        </Col>
+        <Col xs={24} xl={9}>
           <Card size="small" className="side-card" title={editing ? `补齐 · ${editing.question}` : "新建用例"}>
             {editing ? (
               <EvidenceForm key={editing.id} docs={docs} initial={editing} submitLabel="保存" onCancel={() => setEditing(undefined)}
@@ -334,7 +321,7 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
               <EvidenceForm key={formKey} docs={docs} submitLabel="创建候选"
                 onSubmit={(v) => act(async () => {
                   await client.createEvalCase(kbId, { question: v.question, label: v.label, ...v.details, ...(v.evidence.length ? { evidence: v.evidence } : {}) });
-                  setFormKey((k) => k + 1);
+                  setFormKey((value) => value + 1);
                 })} />
             )}
           </Card>

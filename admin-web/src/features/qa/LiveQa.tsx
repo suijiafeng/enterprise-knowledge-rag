@@ -1,6 +1,7 @@
 import { Alert, Button, Card, Input, Tag, Typography } from "antd";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { type ApiClient, type Conversation, type HistoryMessage } from "../../api/client";
+import { clearPending, loadPending, recoveryAction } from "../../api/chatRecovery";
 import { streamAnswer } from "../../api/chatStream";
 import { AnswerText } from "./AnswerText";
 import { FeedbackBar } from "./FeedbackBar";
@@ -9,6 +10,7 @@ import { EmptyState, ErrorState, LoadingList } from "../../components/StateViews
 import { chatReducer, createRequestGate, initialChatState, visibleCitations, type Citation } from "./chatState";
 
 const VALIDATED_NOTE = "来源信息检查通过，请核对内容";
+const HISTORY_PAGE = 2;
 
 function Sources({ citations, active }: { citations: Citation[]; active: number | undefined }) {
   if (citations.length === 0) return <Typography.Text type="secondary">选择一条回答查看来源。</Typography.Text>;
@@ -37,6 +39,8 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
   const [question, setQuestion] = useState("");
   const [active, setActive] = useState<number>();
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
+  const [olderCursor, setOlderCursor] = useState<string | null>(null);
   const [stream, dispatch] = useReducer(chatReducer, initialChatState);
   const abort = useRef<AbortController>(undefined);
   const gate = useRef(createRequestGate());
@@ -59,14 +63,27 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
     }
   }, [client, kbId]);
 
-  const loadHistory = useCallback(async (id: string | undefined) => {
-    if (!id) return setHistory([]);
+  const loadHistory = useCallback(async (id: string | undefined, before?: string) => {
+    if (!id) {
+      setHistory([]);
+      setOlderCursor(null);
+      return;
+    }
     const g = loads.current.next();
     try {
-      const messages = await client.messages(id);
-      if (!loads.current.isCurrent(g)) return;
-      setHistory(messages);
-      setSelected(messages.at(-1)?.id);
+      if (client.messagePage) {
+        const page = await client.messagePage(id, { limit: HISTORY_PAGE, ...(before ? { before } : {}) });
+        if (!loads.current.isCurrent(g)) return;
+        setHistory((current) => before ? [...page.items, ...current] : page.items);
+        setOlderCursor(page.nextCursor);
+        if (!before) setSelected(page.items.at(-1)?.id);
+      } else {
+        const messages = await client.messages(id);
+        if (!loads.current.isCurrent(g)) return;
+        setHistory(messages);
+        setOlderCursor(null);
+        setSelected(messages.at(-1)?.id);
+      }
     } catch {
       if (loads.current.isCurrent(g)) setError("无法读取该会话");
     } finally {
@@ -89,9 +106,43 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
     leave();
     setConversationId(undefined);
     setHistory([]);
+    setOlderCursor(null);
     setHistoryLoading(false);
     void loadConversations();
   }, [loadConversations, leave]);
+
+  useEffect(() => {
+    const pending = loadPending(kbId);
+    if (!pending) return undefined;
+    let stopped = false;
+    void (async () => {
+      try {
+        let outcome = await client.chatRequest(pending.requestId);
+        for (let attempt = 0; attempt < 3 && !stopped && recoveryAction(outcome.status) === "wait"; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          if (stopped) return;
+          outcome = await client.chatRequest(pending.requestId);
+        }
+        if (stopped) return;
+        const action = recoveryAction(outcome.status);
+        if (action !== "load" || !outcome.conversationId) {
+          if (action === "wait") setNotice("上一次提问已提交，仍在生成。刷新只会查询，不会重新发送。");
+          else clearPending();
+          return;
+        }
+        clearPending();
+        setNotice("已按原请求编号恢复，没有重新发送。");
+        setConversationId(outcome.conversationId);
+        setHistoryLoading(true);
+        await loadHistory(outcome.conversationId);
+      } catch {
+        if (!stopped) clearPending();
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
+  }, [kbId, client, loadHistory]);
 
   useEffect(() => () => abort.current?.abort(), []);
 
@@ -133,6 +184,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
         </div>
       </div>
       {!modelEnabled && <Alert type="warning" showIcon className="scaffold-alert" title="服务端未配置对话模型" description="设置 ZHIKU_CHAT_PROVIDER=ollama 后重启服务。" />}
+      {notice && <Alert type="info" showIcon closable className="scaffold-alert" title={notice} onClose={() => setNotice(undefined)} />}
       {error && <Alert type="error" showIcon closable className="scaffold-alert" title={error} onClose={() => setError(undefined)} />}
       <div className="qa-grid">
         <Card size="small" title="会话历史">
@@ -154,6 +206,9 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
           {historyLoading && <LoadingList rows={3} />}
           {!historyLoading && history.length === 0 && stream.status === "idle" && (
             <EmptyState icon="chat" title="暂无问答记录" description="输入问题开始提问；回答只依据当前授权且生效的版本。" />
+          )}
+          {olderCursor && conversationId && (
+            <Button block className="older-history" onClick={() => void loadHistory(conversationId, olderCursor)}>更早的问答</Button>
           )}
           {history.map((m) => (
             <div key={m.id} onClick={() => setSelected(m.id)}>

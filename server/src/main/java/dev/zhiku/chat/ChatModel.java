@@ -8,7 +8,17 @@ import java.util.function.Consumer;
 public interface ChatModel {
   record Message(String role, String content) {}
 
+  /** promptTokens / completionTokens 仅在提供方返回用量时非空；不知道就保持 null，不估算。 */
+  record Completion(String text, Integer promptTokens, Integer completionTokens) {}
+
   String model();
 
   void stream(List<Message> messages, Consumer<String> onToken, BooleanSupplier cancelled);
+
+  /** 评测等非流式调用。默认实现不报告 token。 */
+  default Completion complete(List<Message> messages) {
+    var text = new StringBuilder();
+    stream(messages, text::append, () -> false);
+    return new Completion(text.toString(), null, null);
+  }
 }

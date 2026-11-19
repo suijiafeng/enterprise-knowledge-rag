@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { rateMessage, streamChat, type FeedbackReason } from "./chatClient.js";
+import { clearPending, loadPending, lookupChatRequest, recoveryAction } from "./chatRecovery.js";
 import type { AccessTokenGetter, Citation } from "./contracts.js";
 import { WIDGET_CSS } from "./widgetStyles.js";
 
@@ -86,6 +87,8 @@ export function ZhikuWidget({
   const followBottom = useRef(true);
   const running = turns.some((t) => t.state === "running");
   const tokenOpts = getAccessToken ? { getAccessToken } : {};
+  const tokenGetter = useRef(getAccessToken);
+  tokenGetter.current = getAccessToken;
 
   // 宿主切换知识库或接口地址后：中止在途请求、清空对话并作废迟到回调，不把旧会话带到新库。
   const context = useRef(0);
@@ -96,6 +99,28 @@ export function ZhikuWidget({
     conversation.current = undefined;
     setTurns([]);
     setExpanded(undefined);
+    const pending = loadPending(knowledgeBaseId);
+    const key = context.current;
+    const restoreToken = tokenGetter.current;
+    if (pending) {
+      void lookupChatRequest({
+        endpoint,
+        requestId: pending.requestId,
+        ...(restoreToken ? { getAccessToken: () => restoreToken() } : {}),
+      }).then((view) => {
+        if (key !== context.current || !view || view.hidden || recoveryAction(view.status) !== "show" || !view.answer) return;
+        clearPending();
+        if (view.conversationId) conversation.current = view.conversationId;
+        setTurns([{
+          id: 1,
+          question: view.question || pending.question,
+          state: "complete",
+          text: view.answer ?? "",
+          citations: [],
+          ...(view.messageId ? { messageId: view.messageId } : {}),
+        }]);
+      }).catch(() => undefined);
+    }
     return () => controller.current?.abort();
   }, [endpoint, knowledgeBaseId]);
   useEffect(() => {

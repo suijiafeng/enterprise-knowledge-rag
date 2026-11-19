@@ -20,6 +20,10 @@ const documents = ["v1", "v2", "v3"].map((id) => ({ id, title: `文档${id}`, cr
 function clientWith(overrides: Partial<ApiClient> = {}): ApiClient {
   return { evalCases: vi.fn(async () => [candidate]), latestRun: vi.fn(async () => undefined), documents: vi.fn(async () => documents),
     setEvalEvidence: vi.fn(async () => {}), setEvalCaseDetails: vi.fn(async () => {}), createEvalCase: vi.fn(async () => ({ id: "new" })),
+    evalRuns: vi.fn(async () => []), evalSettings: vi.fn(async () => ({
+      chunkStrategy: "fixed-overlap", chunkMaxChars: 800, chunkOverlap: 100, rerankEnabled: false, rerank: "未接入", maxK: 30,
+      defaultContextChunks: 5, maxContextChunks: 10, chatConfigured: false, chatModel: null,
+    })),
     ...overrides } as unknown as ApiClient;
 }
 const named = (text: string) => ({ name: new RegExp(`^${text.split("").join("\\s*")}$`) });

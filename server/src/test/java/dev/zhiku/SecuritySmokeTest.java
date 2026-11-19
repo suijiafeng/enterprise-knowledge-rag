@@ -30,6 +30,15 @@ class SecuritySmokeTest extends IntegrationTest {
   }
 
   @Test
+  void anonymousExampleEvaluationIsOnlyTheBundledSnapshot() throws Exception {
+    var body = mvc.perform(get("/api/example-evaluation")).andExpect(status().isOk())
+        .andExpect(jsonPath("$.example").value(true))
+        .andExpect(jsonPath("$.runs").isArray())
+        .andReturn().getResponse().getContentAsString();
+    org.assertj.core.api.Assertions.assertThat(body).doesNotContain("enterprise_id").doesNotContain("password");
+  }
+
+  @Test
   void anonymousBusinessReadIsUnauthenticated() throws Exception {
     mvc.perform(get("/api/knowledge-bases"))
         .andExpect(status().isUnauthorized())

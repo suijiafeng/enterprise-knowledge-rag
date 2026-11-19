@@ -11,16 +11,16 @@ const summary: EvalSummary = {
 describe("live evaluation", () => {
   it("reports measured ratios and never an answer-accuracy figure", () => {
     const cards = metricCards(summary, 5);
-    expect(cards.map((c) => c.value)).toEqual(["2/3", "3/5", "42 ms", "1"]);
-    expect(cards[0]!.title).toBe("Hit@5（证据位置覆盖）");
+    expect(cards.map((c) => c.value)).toEqual(["2/3", "3/5", "—", "— / 42 ms", "—", "1"]);
+    expect(cards[0]!.title).toBe("Hit@5（片段完整覆盖）");
     expect(cards.map((c) => c.title).join()).not.toContain("答案准确率");
   });
 
   it("counts cases left out of the denominators, naming source failures separately", () => {
     const cards = metricCards({ ...summary, sourceUnavailable: 2 }, 5);
-    expect(cards[3]).toMatchObject({ title: "未计入分母", value: "3" });
-    expect(cards[3]!.sub).toContain("来源失效 2");
-    expect(metricCards(summary, 5)[3]!.value).toBe("1");
+    expect(cards[5]).toMatchObject({ title: "未计入分母", value: "3" });
+    expect(cards[5]!.sub).toContain("来源失效 2");
+    expect(metricCards(summary, 5)[5]!.value).toBe("1");
   });
 
   it("labels each result, including cases whose source is no longer eligible", () => {
@@ -77,7 +77,7 @@ describe("live evaluation", () => {
   });
 
   it("shows dashes before the first run", () => {
-    expect(metricCards(undefined, 5).map((c) => c.value)).toEqual(["—", "—", "—", "—"]);
+    expect(metricCards(undefined, 5).map((c) => c.value)).toEqual(["—", "—", "—", "—", "—", "—"]);
   });
 
   it("lets candidates be approved and completed but freezes approved cases", () => {

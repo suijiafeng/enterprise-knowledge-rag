@@ -203,6 +203,22 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
 .empty-desc { color: #8b93a7; font-size: 13px; max-width: 360px; }
 .state-pad { padding: 16px; }
 
+.eval-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.metric-bars { display: grid; gap: 8px; }
+.metric-bar-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 88px; gap: 8px; align-items: center; font-size: 12px; }
+.metric-bar-track { position: relative; height: 10px; background: #e6e9ef; border-radius: 99px; overflow: hidden; }
+.metric-bar-fill { height: 100%; background: #2f5bd3; }
+.metric-bar-empty { position: absolute; inset: -4px 0 auto; color: #8b93a7; font-size: 11px; }
+.eval-definitions { margin: 0; padding-left: 18px; color: #3a4256; font-size: 12px; line-height: 1.6; }
+mark.eval-hit { background: #fde68a; color: inherit; }
+.eval-chunk { background: #f4f6f9; border-radius: 6px; padding: 8px 10px; margin-top: 6px; white-space: pre-wrap; font-size: 13px; line-height: 1.6; }
+.ant-table-row.row-selected > td { background: #f2f5fd; }
+@media (max-width: 768px) {
+  .page-head { flex-direction: column; }
+  .metric-bar-row { grid-template-columns: 64px minmax(0, 1fr) 72px; }
+  .metric-value { font-size: 22px; }
+}
+
 .eval-case { display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px solid #f0f2f5; font-size: 13px; }
 .eval-case:last-child { border-bottom: 0; }
 .eval-form { display: grid; gap: 8px; }
