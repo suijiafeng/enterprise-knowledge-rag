@@ -14,12 +14,12 @@ export interface ZhikuWidgetProps {
   subtitle?: string;
   greeting?: string;
   quickQuestions?: string[];
-  /** 品牌色，格式为 #rgb 或 #rrggbb；其他值回退为 #18181B。 */
+  /** 品牌色，格式为 #rgb 或 #rrggbb；其他值回退为 #2f5bd3。 */
   themeColor?: string;
   defaultOpen?: boolean;
 }
 
-const DEFAULT_THEME = "#18181B";
+const DEFAULT_THEME = "#2f5bd3";
 const REASONS: { key: FeedbackReason; label: string }[] = [
   { key: "WRONG", label: "答错了" },
   { key: "MISSING", label: "没答到" },

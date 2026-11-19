@@ -76,17 +76,17 @@ export function App({ initialMode = "login" }: { initialMode?: Mode }) {
   return (
     <ConfigProvider button={{ autoInsertSpace: false }} theme={{
       token: {
-        colorPrimary: "#18181B",
-        colorInfo: "#3F3F46",
-        colorLink: "#18181B",
-        colorSuccess: "#3F6212",
-        colorWarning: "#A16207",
-        colorError: "#9F1239",
-        colorBgLayout: "#FAFAFA",
-        colorBorder: "#E4E4E7",
-        colorBorderSecondary: "#E4E4E7",
-        colorText: "#18181B",
-        colorTextSecondary: "#52525B",
+        colorPrimary: "#2f5bd3",
+        colorInfo: "#2f5bd3",
+        colorLink: "#2f5bd3",
+        colorSuccess: "#1f9d55",
+        colorWarning: "#d97706",
+        colorError: "#d4380d",
+        colorBgLayout: "#f4f6f9",
+        colorBorder: "#e6e9ef",
+        colorBorderSecondary: "#e6e9ef",
+        colorText: "#1d2433",
+        colorTextSecondary: "#6b7385",
         borderRadius: 6,
         borderRadiusLG: 8,
         fontSize: 14,
@@ -96,8 +96,8 @@ export function App({ initialMode = "login" }: { initialMode?: Mode }) {
       },
       components: {
         Button: { primaryShadow: "none", defaultShadow: "none", dangerShadow: "none" },
-        Layout: { bodyBg: "#FAFAFA", headerBg: "#FFFFFF", siderBg: "#FFFFFF" },
-        Menu: { itemBorderRadius: 6, itemSelectedBg: "#F4F4F5", itemSelectedColor: "#18181B", itemHoverBg: "#F4F4F5", activeBarBorderWidth: 0 },
+        Layout: { bodyBg: "#f4f6f9", headerBg: "#FFFFFF", siderBg: "#1f2638" },
+        Menu: { itemBorderRadius: 6, itemSelectedBg: "#2f5bd3", itemSelectedColor: "#ffffff", itemHoverBg: "#283049", itemColor: "#c5cad6", darkItemBg: "#1f2638", darkItemSelectedBg: "#2f5bd3", darkItemSelectedColor: "#ffffff", darkItemHoverBg: "#283049", darkItemColor: "#c5cad6", activeBarBorderWidth: 0 },
       },
     }}>
       <SessionProvider>
@@ -127,7 +127,7 @@ function Shell({ onLogin }: { onLogin: () => void }) {
   return (
     <>
       <Layout className="shell">
-        <Layout.Sider theme="light" width={208} className="shell-sider" breakpoint="lg" collapsedWidth={0}>
+        <Layout.Sider theme="dark" width={208} className="shell-sider" breakpoint="lg" collapsedWidth={0}>
           <div className="brand">
             <span className="brand-mark" aria-hidden="true">知</span>
             <div>
@@ -136,7 +136,7 @@ function Shell({ onLogin }: { onLogin: () => void }) {
             </div>
           </div>
           <Menu
-            theme="light"
+            theme="dark"
             mode="inline"
             className="shell-menu"
             selectedKeys={[active]}
