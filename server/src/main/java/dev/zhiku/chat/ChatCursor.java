@@ -1,6 +1,6 @@
 package dev.zhiku.chat;
 
-import dev.zhiku.common.ApiException;
+import dev.zhiku.platform.ApiException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
