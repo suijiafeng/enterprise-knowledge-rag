@@ -6,11 +6,30 @@
 
 ## 界面
 
-未登录时管理端用虚构示例，页面上标着「示例数据」。
+未登录时管理端用虚构示例，页面上标着「示例数据」。下面四张都是这个运行中的界面。
 
-![管理端总览](docs/screenshots/admin-overview.png)
-
-![问答工作台](docs/screenshots/admin-qa.png)
+<table>
+  <tr>
+    <td width="400" valign="top">
+      <img src="docs/screenshots/overview.png" width="400" alt="知识库总览">
+      <br>总览：指标带，以及带周末低谷的 7 日问答量
+    </td>
+    <td width="400" valign="top">
+      <img src="docs/screenshots/qa.png" width="400" alt="问答工作台">
+      <br>问答：回答只带来源，示例模式不能发送
+    </td>
+  </tr>
+  <tr>
+    <td width="400" valign="top">
+      <img src="docs/screenshots/debug.png" width="400" alt="检索调试">
+      <br>检索调试：同一条链路的分阶段轨迹
+    </td>
+    <td width="400" valign="top">
+      <img src="docs/screenshots/mobile.png" width="400" alt="窄屏总览">
+      <br>窄屏：核心指标收成两列
+    </td>
+  </tr>
+</table>
 
 ## 已实现
 
