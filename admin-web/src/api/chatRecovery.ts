@@ -75,7 +75,7 @@ export function clearPending(kbId?: string): void {
   else s.setItem(KEY, JSON.stringify(map));
 }
 
-export function recoveryAction(pending: PendingRequest | null, retryBlocked: boolean): "none" | "resume" | "resend" {
-  if (!pending) return "none";
-  return retryBlocked ? "resume" : "resend";
+export function recoveryAction(status: string): "load" | "wait" | "drop" {
+  if (status === "complete" || status === "failed" || status === "refused" || status === "cancelled") return "load";
+  if (status === "running" || status === "interrupted") return "wait"; return "drop";
 }
