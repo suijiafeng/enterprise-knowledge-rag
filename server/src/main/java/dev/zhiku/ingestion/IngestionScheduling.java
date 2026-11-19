@@ -37,17 +37,20 @@ class IngestionScheduling {
     });
   }
 
-  /** 每个空槽启动一轮处理：逐个认领并处理，直到队列空或达到本轮上限。认领后持有租约，所以任务不在本地排队等线程。 */
+  /**
+   * 每个当前空闲的槽启动一轮处理。只取这一瞬间的空槽数：本轮结束时槽会归还，
+   * 不能在同一次轮询里立刻再排一轮，否则上限形同虚设。认领后持有租约，任务不在本地排队等线程。
+   */
   @Scheduled(fixedDelayString = "${zhiku.ingestion.poll-interval}")
   void poll() {
     worker.reapExpired();
-    while (slots.tryAcquire()) {
-      try {
-        pool.execute(this::drain);
-      } catch (RuntimeException e) {
-        slots.release();
-        throw e;
-      }
+    int permits = slots.drainPermits();
+    int submitted = 0;
+    try {
+      for (; submitted < permits; submitted++) pool.execute(this::drain);
+    } catch (RuntimeException e) {
+      slots.release(permits - submitted);
+      throw e;
     }
   }
 
