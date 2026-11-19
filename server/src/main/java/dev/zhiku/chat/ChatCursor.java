@@ -1,6 +1,6 @@
 package dev.zhiku.chat;
 
-import dev.zhiku.platform.ApiException;
+import dev.zhiku.common.ApiException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -8,8 +8,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 历史分页游标是 {@code (created_at, id)}，精度到毫秒。同一毫秒内用 id 决定先后，
- * 避免只按时间分页时漏掉或重复同一时刻的消息。游标是不透明字符串，调用方不解析。
+ * 消息历史 keyset 分页游标，Base64URL({@code createdAtEpochMillis|uuid}) 或 Base64URL({@code isoInstant|uuid})。
+ * 越久远的消息越早；在按时间升序排列的列表里，游标用于向更早方向翻页。
  */
 public final class ChatCursor {
   public record Position(Instant createdAt, UUID id) {}
@@ -17,7 +17,11 @@ public final class ChatCursor {
   private ChatCursor() {}
 
   public static String encode(Instant createdAt, UUID id) {
-    var raw = createdAt.toEpochMilli() + "|" + id;
+    var timePart =
+        createdAt.getNano() % 1_000_000 == 0
+            ? Long.toString(createdAt.toEpochMilli())
+            : createdAt.toString();
+    var raw = timePart + "|" + id;
     return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
   }
 
@@ -26,7 +30,11 @@ public final class ChatCursor {
       var raw = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
       var bar = raw.indexOf('|');
       if (bar <= 0 || bar == raw.length() - 1) throw new IllegalArgumentException();
-      var createdAt = Instant.ofEpochMilli(Long.parseLong(raw.substring(0, bar)));
+      var timePart = raw.substring(0, bar);
+      var createdAt =
+          timePart.indexOf('T') < 0
+              ? Instant.ofEpochMilli(Long.parseLong(timePart))
+              : Instant.parse(timePart);
       var id = UUID.fromString(raw.substring(bar + 1));
       return new Position(createdAt, id);
     } catch (RuntimeException e) {
@@ -34,9 +42,9 @@ public final class ChatCursor {
     }
   }
 
-  /** 负数表示 a 在按 (created_at 毫秒, id) 升序时位于 b 之前。 */
+  /** 负数表示 a 在按 (created_at, id) 升序时位于 b 之前。 */
   public static int compare(Instant aTime, UUID aId, Instant bTime, UUID bId) {
-    var time = Long.compare(aTime.toEpochMilli(), bTime.toEpochMilli());
+    var time = aTime.compareTo(bTime);
     return time != 0 ? time : aId.compareTo(bId);
   }
 
