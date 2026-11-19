@@ -1,10 +1,9 @@
 import type { OverviewApi } from "../../api/client";
 import type { IndexStatus } from "../../components/IndexStatusTag";
+import { formatInstant } from "../../format";
 import type { OverviewData } from "./fixtures";
 
-const stamp = (iso: string | Date, zone: string) =>
-  new Intl.DateTimeFormat("sv-SE", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-    .format(new Date(iso));
+const stamp = (iso: string | Date, zone: string) => formatInstant(iso, zone);
 
 const indexStatus = (s: OverviewApi["recentDocuments"][number]["indexStatus"]): IndexStatus =>
   s === "ready" ? "indexed" : s === "failed" ? "failed" : s === "processing" ? "parsing" : "pending";

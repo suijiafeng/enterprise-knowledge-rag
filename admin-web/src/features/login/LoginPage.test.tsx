@@ -10,7 +10,8 @@ describe("login page", () => {
     expect(html).not.toContain('type="password"><');
     expect(html).not.toContain("记住我");
     expect(html).not.toContain("忘记密码");
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*企业身份登录/s);
+    expect(html).toContain("企业身份登录尚未接入");
+    expect(html).not.toMatch(/<button[^>]*>[^<]*企业身份登录/);
   });
 
   it("does not advertise capabilities the system lacks", () => {

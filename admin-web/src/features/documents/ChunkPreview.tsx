@@ -1,4 +1,4 @@
-import { Button, Card, Empty, Typography } from "antd";
+import { Card, Empty, Typography } from "antd";
 import type { DocumentRow } from "./fixtures";
 
 export function ChunkPreview({ document }: { document: DocumentRow | undefined }) {
@@ -23,8 +23,7 @@ export function ChunkPreview({ document }: { document: DocumentRow | undefined }
             </div>
           ))}
           <div className="chunk-foot">
-            <Typography.Text type="secondary">切块策略：待确认（T3）</Typography.Text>
-            <Button size="small" disabled title="未实现">查看全部 →</Button>
+            <Typography.Text type="secondary">切块策略：待确认（T3）。这里列出的就是该示例文档的全部切块。</Typography.Text>
           </div>
         </>
       )}

@@ -1,18 +1,25 @@
 import { Alert, Button, Skeleton } from "antd";
 import type { ReactNode } from "react";
 
-/** 共用的页内状态（设计稿第 07 页）。重试即重复用户自己的操作；没有“升级”路径。 */
-const ICONS = { doc: "📄", chat: "💬", search: "🔍", chart: "📊" } as const;
+/** 共用的页内状态。重试即重复用户自己的操作；没有“升级”路径。 */
+const MARKS = {
+  doc: "M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M8 13h8M8 17h5",
+  chat: "M7 18l-3 3V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H7z",
+  search: "M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14zM20 20l-3.5-3.5",
+  chart: "M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-3",
+} as const;
 
 export function EmptyState({ icon, title, description, action }: {
-  icon: keyof typeof ICONS;
+  icon: keyof typeof MARKS;
   title: string;
   description: string;
   action?: ReactNode;
 }) {
   return (
     <div className="empty-state" role="status">
-      <span className="empty-icon" aria-hidden="true">{ICONS[icon]}</span>
+      <svg className="empty-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d={MARKS[icon]} />
+      </svg>
       <div className="empty-title">{title}</div>
       <div className="empty-desc">{description}</div>
       {action}

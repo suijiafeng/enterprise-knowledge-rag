@@ -1,9 +1,11 @@
-import { Alert, Button, Card, Input, Popconfirm, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, DatePicker, Input, Popconfirm, Space, Table, Tag, Typography } from "antd";
+import dayjs from "dayjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type DeletionInfo, type DocumentInfo, type Status, type VersionInfo } from "../../api/client";
 import { IndexStatusTag, type IndexStatus } from "../../components/IndexStatusTag";
 import { EmptyState, LoadingList } from "../../components/StateViews";
+import { formatInstant } from "../../format";
 import { usePollingLoad } from "../../hooks/usePollingLoad";
 import { ChunkEditor } from "./ChunkEditor";
 
@@ -46,7 +48,7 @@ export function businessDate(instant: string | null, zone: string) {
 function businessState(v: VersionInfo) {
   if (v.withdrawn) return <Tag color="default">已撤回</Tag>;
   if (v.published) return <Tag color="green">已发布</Tag>;
-  if (v.approved) return <Tag color="blue">已批准</Tag>;
+  if (v.approved) return <Tag>已批准</Tag>;
   return <Tag>草稿</Tag>;
 }
 
@@ -59,8 +61,8 @@ function NewVersionForm({ onCreate }: { onCreate: (label: string, from: string, 
   return (
     <Space wrap className="version-form">
       <Input size="small" placeholder="版本号，如 v3.2" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="版本号" />
-      <Input size="small" type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="生效日期" />
-      <Input size="small" type="date" value={until} onChange={(e) => setUntil(e.target.value)} aria-label="失效日期（可空）" />
+      <DatePicker size="small" aria-label="生效日期" placeholder="生效日期" allowClear value={from ? dayjs(from) : null} onChange={(value) => setFrom(value ? value.format("YYYY-MM-DD") : "")} />
+      <DatePicker size="small" aria-label="失效日期（可空）" placeholder="失效日期（可空）" allowClear value={until ? dayjs(until) : null} onChange={(value) => setUntil(value ? value.format("YYYY-MM-DD") : "")} />
       <Button size="small" disabled={!label.trim() || !from} onClick={() => onCreate(label.trim(), from, until)}>新建版本</Button>
     </Space>
   );
@@ -191,6 +193,7 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
           rowKey="id"
           dataSource={docs ?? []}
           pagination={false}
+          scroll={{ x: 760 }}
           rowClassName={(d) => (d.deletion ? "doc-deleted" : "")}
           expandable={{
             rowExpandable: (doc) => !doc.deletion,
@@ -208,7 +211,7 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
             ),
           }}
           columns={[
-            { title: "文档", dataIndex: "title" },
+            { title: "文档", dataIndex: "title", fixed: "left", width: 200, ellipsis: true, render: (title: string) => <span className="clip" title={title}>{title}</span> },
             { title: "版本数", key: "count", className: "mono", render: (_, d) => d.versions.length },
             {
               title: "最新版本索引",
@@ -219,7 +222,7 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
                 return latest ? <IndexStatusTag status={indexState(latest.indexStatus)} /> : "—";
               },
             },
-            { title: "创建时间", dataIndex: "createdAt", className: "mono", render: (v: string) => businessDate(v, zone) },
+            { title: "创建时间", dataIndex: "createdAt", className: "mono", width: 180, render: (v: string) => formatInstant(v, zone) },
             {
               title: "操作",
               key: "op",

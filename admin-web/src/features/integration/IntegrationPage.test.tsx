@@ -17,11 +17,12 @@ describe("api and integration", () => {
     expect(code).toContain('"kbId":"kb-123"');
   });
 
-  it("keeps phase-two features visibly disabled", () => {
+  it("does not render phase-two controls", () => {
     const html = renderToStaticMarkup(<IntegrationPage kbId="kb-123" kbName="制度库" />);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*新建 Key/s);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*保\s*存/s);
+    expect(html).not.toContain("新建 Key");
+    expect(html).not.toContain("回调 URL");
     expect(html).toContain("第二阶段");
+    expect(html).toContain("不提供配置入口");
     expect(html).not.toContain("128,420");
   });
 

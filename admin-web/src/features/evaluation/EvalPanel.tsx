@@ -1,7 +1,10 @@
-import { Alert, Button, Card, Checkbox, Col, InputNumber, Row, Select, Space, Table, Tag, Typography } from "antd";
+import { Button, Card, Checkbox, Col, InputNumber, Row, Select, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, type ApiClient, type EvalCase, type EvalResult, type EvalRun, type EvalSettings } from "../../api/client";
+import { ColumnChart, RatioChart } from "../../components/ColumnChart";
+import { MetricStrip } from "../../components/MetricStrip";
 import { EmptyState, ErrorState } from "../../components/StateViews";
+import { formatInstant } from "../../format";
 import { metricCards } from "./LiveEvaluation";
 import { DEFINITIONS, barValue, decimal, highlightChunk, isLowSample, latencyRows, metricRows, parameterRows, ratioText } from "./evalPanel";
 
@@ -16,38 +19,24 @@ function MetricBars({ run }: { run: EvalRun }) {
     { key: "faithfulness" as const, label: "忠实度", text: decimal(run.summary.faithfulness) },
     { key: "relevance" as const, label: "相关性", text: decimal(run.summary.relevance) },
   ];
-  return (
-    <div className="metric-bars">
-      {items.map((item) => {
-        const value = barValue(run.summary, item.key);
-        return (
-          <div key={item.key} className="metric-bar-row">
-            <span>{item.label}</span>
-            <div className="metric-bar-track" role="img" aria-label={`${item.label} ${item.text}`}>
-              {value == null ? <span className="metric-bar-empty">无数据</span> : <div className="metric-bar-fill" style={{ width: `${Math.round(value * 100)}%` }} />}
-            </div>
-            <span className="mono">{item.text}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
+  return <RatioChart label="本次运行的比例" items={items.map((item) => ({ ...item, value: barValue(run.summary, item.key) }))} />;
 }
 
 function LatencyChart({ results }: { results: EvalResult[] }) {
   const rows = latencyRows(results);
   if (rows.length === 0) return <EmptyState icon="chart" title="没有可绘制的延迟" description="计入分母的用例才会出现在这里。" />;
-  const max = Math.max(1, ...rows.map((row) => row.latencyMs));
+  const slowest = Math.max(...rows.map((row) => row.latencyMs));
   return (
-    <div className="bar-chart" aria-label="各题检索延迟">
-      {rows.map((row) => (
-        <div key={row.caseId} className="bar-column" role="img" aria-label={`${row.question} ${row.latencyMs} 毫秒`}>
-          <span className="bar-value">{row.latencyMs}</span>
-          <div className="bar bar-latest" style={{ height: `${Math.max(4, Math.round((row.latencyMs / max) * 100))}%` }} />
-          <span className="bar-label">{row.question.slice(0, 8)}</span>
-        </div>
-      ))}
-    </div>
+    <ColumnChart
+      label="各题检索延迟"
+      points={rows.map((row) => ({
+        key: row.caseId,
+        label: row.question.length > 8 ? `${row.question.slice(0, 8)}…` : row.question,
+        value: row.latencyMs,
+        detail: `${row.question}，检索 ${row.latencyMs} 毫秒`,
+        tone: row.latencyMs === slowest && rows.length > 1 ? "alert" : "neutral",
+      }))}
+    />
   );
 }
 
@@ -142,20 +131,12 @@ export function EvalPanel({ client, kbId, cases, refreshKey }: { client: ApiClie
       {selected && (
         <>
           <Typography.Text type="secondary" className="page-sub">
-            运行 {selected.id.slice(0, 8)} · {new Date(selected.createdAt).toLocaleString("zh-CN")} · K {selected.k}
+            运行 <span className="mono" title={selected.id}>{selected.id.slice(0, 8)}</span> · {formatInstant(selected.createdAt)} · K {selected.k}
             {selected.generate ? ` · 生成 ${JUDGE[selected.judge ?? ""] ?? selected.judge ?? "未评审"}` : " · 仅检索"}
             {selected.summary.indexChangedDuringRun ? " · 运行期间索引发生过变化" : ""}
           </Typography.Text>
+          <MetricStrip items={metricCards(selected.summary, selected.k).map((card) => ({ title: card.title, value: card.value, note: card.sub, trend: "flat" as const }))} />
           <Row gutter={[16, 16]}>
-            {metricCards(selected.summary, selected.k).map((card) => (
-              <Col key={card.title} xs={24} sm={12} xl={8}>
-                <Card className="metric-card">
-                  <div className="metric-title">{card.title}</div>
-                  <div className="metric-value">{card.value}</div>
-                  <div className="metric-delta down">{card.sub}</div>
-                </Card>
-              </Col>
-            ))}
             <Col xs={24} xl={12}>
               <Card size="small" title="本次运行的指标">
                 <MetricBars run={selected} />
@@ -176,7 +157,7 @@ export function EvalPanel({ client, kbId, cases, refreshKey }: { client: ApiClie
             rowClassName={(run) => run.id === selectedId ? "row-selected" : ""}
             onRow={(run) => ({ onClick: () => setSelectedId(run.id) })}
             columns={[
-              { title: "时间", dataIndex: "createdAt", render: (value: string) => new Date(value).toLocaleString("zh-CN") },
+              { title: "时间", dataIndex: "createdAt", className: "mono", render: (value: string) => formatInstant(value) },
               { title: "K", dataIndex: "k", className: "mono" },
               { title: "入模", dataIndex: "contextChunks", className: "mono", render: (value: number | null) => value ?? "—" },
               { title: "重排", key: "rerank", render: (_, run) => run.rerankEnabled ? `前 ${run.rerankPool ?? "—"}` : "关闭" },
@@ -197,15 +178,15 @@ export function EvalPanel({ client, kbId, cases, refreshKey }: { client: ApiClie
           <>
             <Space wrap className="eval-toolbar">
               <Select aria-label="对比左侧运行" value={selected.id} onChange={setSelectedId} style={{ minWidth: 220 }}
-                options={runs.map((run) => ({ value: run.id, label: `K=${run.k} · ${new Date(run.createdAt).toLocaleString("zh-CN")}` }))} />
+                options={runs.map((run) => ({ value: run.id, label: `K=${run.k} · ${formatInstant(run.createdAt)}` }))} />
               <Select aria-label="对比右侧运行" value={compared.id} onChange={setCompareId} style={{ minWidth: 220 }}
-                options={runs.map((run) => ({ value: run.id, label: `K=${run.k} · ${new Date(run.createdAt).toLocaleString("zh-CN")}` }))} />
+                options={runs.map((run) => ({ value: run.id, label: `K=${run.k} · ${formatInstant(run.createdAt)}` }))} />
             </Space>
             <Table size="small" pagination={false} rowKey="key" dataSource={[...parameterRows(selected, compared), ...metricRows(selected, compared)]}
               columns={[
                 { title: "项目", dataIndex: "name" },
                 { title: "左侧", dataIndex: "left", render: (value: string, row) => row.changed ? <Tag>{value}</Tag> : value },
-                { title: "右侧", dataIndex: "right", render: (value: string, row) => row.changed ? <Tag color="blue">{value}</Tag> : value },
+                { title: "右侧", dataIndex: "right", render: (value: string, row) => row.changed ? <Tag>{value}</Tag> : value },
                 { title: "右减左", dataIndex: "delta", className: "mono", render: (value: string) => value || "—" },
               ]} />
           </>
@@ -218,12 +199,12 @@ export function EvalPanel({ client, kbId, cases, refreshKey }: { client: ApiClie
             <Checkbox checked={onlyLow} onChange={(event) => setOnlyLow(event.target.checked)}>只看低分或失败</Checkbox>
             <InputNumber min={0} max={1} step={0.1} value={threshold} onChange={(value) => setThreshold(value ?? 0.6)} addonBefore="分数低于" aria-label="低分阈值" />
           </div>
-          {visible.length === 0 ? <EmptyState icon="chart" title="没有符合筛选的样本" description="放宽阈值，或取消“只看低分或失败”。" /> : (
+          {visible.length === 0 ? <EmptyState icon="chart" title="没有符合筛选的样本" description="放宽阈值，或取消“只看低分或失败”。" action={<Button size="small" onClick={() => { setOnlyLow(false); setThreshold(0.6); }}>重置筛选</Button>} /> : (
             <Table<EvalResult> size="small" rowKey="caseId" pagination={false} dataSource={visible} scroll={{ x: 760 }}
               rowClassName={(row) => row.caseId === detail?.caseId ? "row-selected" : ""}
               onRow={(row) => ({ onClick: () => setDetailId(row.caseId) })}
               columns={[
-                { title: "问题", dataIndex: "question" },
+                { title: "问题", dataIndex: "question", fixed: "left", width: 220, ellipsis: true, render: (question: string) => <span className="clip" title={question}>{question}</span> },
                 { title: "证据", key: "evidence", className: "mono", render: (_, row) => row.mappingFailed || row.sourceUnavailable ? "—" : `${row.evidenceHit}/${row.evidenceTotal}` },
                 { title: "名次", dataIndex: "firstRelevantRank", className: "mono", render: (value: number | null) => value ?? "—" },
                 { title: "忠实度", dataIndex: "faithfulness", className: "mono", render: (value: number | null) => decimal(value) },

@@ -6,7 +6,14 @@ import { overviewFromApi } from "./overviewMapper";
 import { OverviewPage } from "./OverviewPage";
 import type { OverviewData } from "./fixtures";
 
-export function LiveOverview({ client, kbId, zone, onNewQuestion }: { client: ApiClient; kbId: string; zone: string; onNewQuestion: () => void }) {
+export function LiveOverview({ client, kbId, zone, onNewQuestion, onOpenDocuments, onOpenRecords }: {
+  client: ApiClient;
+  kbId: string;
+  zone: string;
+  onNewQuestion: () => void;
+  onOpenDocuments?: () => void;
+  onOpenRecords?: () => void;
+}) {
   const [data, setData] = useState<OverviewData>();
   const [error, setError] = useState<ApiError>();
   const gate = useRef(createRequestGate());
@@ -22,5 +29,5 @@ export function LiveOverview({ client, kbId, zone, onNewQuestion }: { client: Ap
   }, [client, kbId, zone]);
   if (error) return <div className="page"><ErrorState code={error.code} message={error.message} requestId={error.requestId} onRetry={load} /></div>;
   if (!data) return <div className="page state-pad"><LoadingList rows={8} /></div>;
-  return <OverviewPage data={data} live onNewQuestion={onNewQuestion} />;
+  return <OverviewPage data={data} live onNewQuestion={onNewQuestion} {...(onOpenDocuments ? { onOpenDocuments } : {})} {...(onOpenRecords ? { onOpenRecords } : {})} />;
 }

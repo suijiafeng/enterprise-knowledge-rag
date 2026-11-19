@@ -62,7 +62,7 @@ export function RetrievalDebugPage({ trace, live = false }: { trace: DebugTrace;
       <Card
         size="small"
         className="debug-card"
-        title={<>候选 Chunk 各阶段得分 <span className="card-unit">仅显示授权范围内候选；绿色行为回答引用的 chunk；跳过的阶段显示 —</span></>}
+        title={<>候选 Chunk 各阶段得分 <span className="card-unit">仅显示授权范围内候选；「引用」是回答用到的 chunk；跳过的阶段显示 —</span></>}
       >
         <Table
           size="small"

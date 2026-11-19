@@ -39,7 +39,7 @@ function CodeBlock({ code }: { code: string }) {
 
 /** 接入指南仅限真实存在的访问方式：短期 widget token。没有长期密钥。 */
 export function IntegrationPage({ kbId, kbName }: { kbId: string | undefined; kbName: string | undefined }) {
-  const [theme, setTheme] = useState("#1D5BBF");
+  const [theme, setTheme] = useState("#18181B");
   return (
     <div className="page">
       <div className="page-head">
@@ -47,7 +47,6 @@ export function IntegrationPage({ kbId, kbName }: { kbId: string | undefined; kb
           <Typography.Title level={3} className="page-title">API 与集成</Typography.Title>
           <Typography.Text type="secondary" className="page-sub">把知识库问答以受控身份嵌入内部系统 · 首版只开放挂件短期令牌</Typography.Text>
         </div>
-        <Button type="primary" disabled title="长期 API Key 不在首版范围">+ 新建 Key</Button>
       </div>
       <Alert type="warning" showIcon className="scaffold-alert" title="不提供长期 API Key"
         description="前端代码里不出现任何长期密钥。宿主后端用员工身份换取 10 分钟挂件令牌，令牌只能访问一个知识库、只能提问和评价本人回答。" />
@@ -60,7 +59,7 @@ export function IntegrationPage({ kbId, kbName }: { kbId: string | undefined; kb
               <Input size="small" className="theme-input" value={theme} onChange={(e) => setTheme(e.target.value)} aria-label="主题色" addonBefore="主题色" maxLength={7} />
             }>
               <CodeBlock code={embedSnippet(kbId, theme)} />
-              <Typography.Paragraph type="secondary" className="page-sub">主题色只接受 #rgb / #rrggbb，其他值回退默认蓝。</Typography.Paragraph>
+              <Typography.Paragraph type="secondary" className="page-sub">主题色只接受 #rgb / #rrggbb，其他值回退 #18181B。</Typography.Paragraph>
             </Card>
             <Card size="small" className="debug-card" title="宿主后端换取挂件令牌">
               <CodeBlock code={tokenSnippet(kbId)} />
@@ -74,11 +73,7 @@ export function IntegrationPage({ kbId, kbName }: { kbId: string | undefined; kb
               </Typography.Paragraph>
             </Card>
             <Card size="small" className="side-card" title="调用统计与 Webhook · 第二阶段">
-              <Typography.Paragraph type="secondary">调用量、成功率、P95 统计与 Webhook 事件推送不在首版范围，以下控件不可用。</Typography.Paragraph>
-              <Input disabled placeholder="回调 URL" aria-label="回调 URL（未实现）" />
-              <div className="proposal-actions">
-                <Button disabled>保存</Button>
-              </div>
+              <Typography.Paragraph type="secondary">调用量、成功率、P95 与 Webhook 事件推送不在首版范围，因此这里不提供配置入口。</Typography.Paragraph>
             </Card>
           </Col>
         </Row>

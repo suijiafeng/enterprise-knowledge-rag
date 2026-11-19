@@ -37,8 +37,9 @@ describe("documents page", () => {
     expect(visibleSelection([], docs[0]!.id)).toBeUndefined();
   });
 
-  it("keeps upload disabled and does not invent ingestion limits", () => {
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*选择文件/s);
+  it("does not offer upload in sample mode and does not invent ingestion limits", () => {
+    expect(html).toContain("示例模式不能上传");
+    expect(html).not.toContain("选择文件");
     expect(html).not.toContain("50 MB");
     expect(html).not.toContain("512 tokens，重叠");
     expect(html).toContain("待确认");

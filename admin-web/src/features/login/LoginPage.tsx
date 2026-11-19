@@ -54,7 +54,7 @@ export function LoginPage({ onLogin, onBrowseSamples }: {
         <section className="login-card" aria-label="登录">
           <Typography.Title level={3} className="page-title">登录管理控制台</Typography.Title>
           <Typography.Text type="secondary">身份来自登录令牌；用户与角色由身份提供方管理。</Typography.Text>
-          <Button block size="large" disabled className="login-sso" title="企业 SSO 尚未接入">企业身份登录（SSO 未接入）</Button>
+          <Typography.Text type="secondary">企业身份登录尚未接入。本地开发使用下方开发令牌。</Typography.Text>
           <Divider plain>本地开发</Divider>
           <label className="login-label" htmlFor="dev-token">开发令牌</label>
           <Input.Password id="dev-token" aria-label="开发令牌" value={token} onChange={(e) => setToken(e.target.value)} placeholder="node scripts/dev-token.mjs 签发"

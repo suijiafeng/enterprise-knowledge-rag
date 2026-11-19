@@ -14,12 +14,12 @@ export interface ZhikuWidgetProps {
   subtitle?: string;
   greeting?: string;
   quickQuestions?: string[];
-  /** 品牌色，格式为 #rgb 或 #rrggbb；其他值回退为默认蓝色。 */
+  /** 品牌色，格式为 #rgb 或 #rrggbb；其他值回退为 #18181B。 */
   themeColor?: string;
   defaultOpen?: boolean;
 }
 
-const DEFAULT_THEME = "#2f5bd3";
+const DEFAULT_THEME = "#18181B";
 const REASONS: { key: FeedbackReason; label: string }[] = [
   { key: "WRONG", label: "答错了" },
   { key: "MISSING", label: "没答到" },
@@ -179,7 +179,11 @@ export function ZhikuWidget({
     <div className="zhiku-root" style={style}>
       <style>{WIDGET_CSS}</style>
       {!open && (
-        <button type="button" className="zhiku-launcher" aria-label="打开知库问答" onClick={() => setOpen(true)}>💬</button>
+        <button type="button" className="zhiku-launcher" aria-label="打开知库问答" onClick={() => setOpen(true)}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M7 18l-3 3V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H7z" />
+          </svg>
+        </button>
       )}
       {open && (
         <section className="zhiku-panel" role="dialog" aria-label={title}>
