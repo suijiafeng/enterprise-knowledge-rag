@@ -149,10 +149,10 @@ class ChatTest extends IntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.origin").value("chat"))
         .andExpect(jsonPath("$.messageId").value(messageId))
-        .andExpect(jsonPath("$.stages.length()").value(6))
-        .andExpect(jsonPath("$.stages[5].key").value("generation"))
-        .andExpect(jsonPath("$.stages[5].status").value("success"))
-        .andExpect(jsonPath("$.stages[5].summary").value(org.hamcrest.Matchers.containsString("test-scripted")));
+        .andExpect(jsonPath("$.stages.length()").value(7))
+        .andExpect(jsonPath("$.stages[6].key").value("generation"))
+        .andExpect(jsonPath("$.stages[6].status").value("success"))
+        .andExpect(jsonPath("$.stages[6].summary").value(org.hamcrest.Matchers.containsString("test-scripted")));
   }
 
   @Test
@@ -170,8 +170,8 @@ class ChatTest extends IntegrationTest {
     var failedId = jdbc.queryForObject("SELECT m.id FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ? AND m.status = 'failed'",
         UUID.class, kb);
     mvc.perform(get("/api/knowledge-bases/{kb}/traces/{id}", kb, traceId).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
-        .andExpect(jsonPath("$.stages[5].status").value("failed"))
-        .andExpect(jsonPath("$.stages[5].summary").value(org.hamcrest.Matchers.containsString("MODEL_UNAVAILABLE")))
+        .andExpect(jsonPath("$.stages[6].status").value("failed"))
+        .andExpect(jsonPath("$.stages[6].summary").value(org.hamcrest.Matchers.containsString("MODEL_UNAVAILABLE")))
         .andExpect(jsonPath("$.messageId").value(failedId.toString()));
     mvc.perform(get("/api/knowledge-bases/{kb}/records", kb).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
         .andExpect(jsonPath("$.items[0].traceId").value(traceId));

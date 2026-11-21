@@ -8,6 +8,22 @@ export interface Citation {
   versionId: string;
   title: string;
   excerpt: string;
+  /** 回答中 [n] 的编号；旧服务端不返回时按位置推断。 */
+  index?: number;
+  /** 回答是否实际引用了这条来源；为 false 时不在来源面板展示。 */
+  cited?: boolean;
+}
+
+/** 词面引用支撑检查：带引用的句子数、有原文支撑的句子数、支撑弱的句子序号。 */
+export interface CitationSupport {
+  checked: number;
+  supported: number;
+  weak: number[];
+}
+
+/** 面板只列出回答真正引用的来源，并保留它在回答中的编号。 */
+export function citedSources(citations: Citation[]): (Citation & { index: number })[] {
+  return citations.map((c, i) => ({ ...c, index: c.index ?? i + 1 })).filter((c) => c.cited !== false);
 }
 
 export type ChatEvent =

@@ -4,6 +4,9 @@ export interface Citation {
   versionId: string;
   title: string;
   excerpt: string;
+  /** 回答中 [n] 的编号与是否被实际引用；旧服务端不返回。 */
+  index?: number;
+  cited?: boolean;
 }
 
 export type ChatEvent =

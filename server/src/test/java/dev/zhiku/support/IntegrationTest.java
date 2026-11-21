@@ -11,7 +11,10 @@ import org.springframework.test.context.DynamicPropertySource;
  * ../.env（由 application.yml 导入）永远无法改变测试行为；由测试替身代替。
  */
 @SpringBootTest(properties = {"zhiku.chat.provider=none", "zhiku.embedding.provider=none", "zhiku.widget.allowed-origins=",
-    "zhiku.chat.recheck-interval=PT0S", "zhiku.chat.max-answer-chars=200", "zhiku.chat.handoff-channel="})
+    "zhiku.chat.recheck-interval=PT0S", "zhiku.chat.max-answer-chars=200", "zhiku.chat.handoff-channel=",
+    "zhiku.retrieval.hybrid=false", "zhiku.retrieval.rerank=false", "zhiku.retrieval.min-score=-1", "zhiku.chat.query-rewrite=heuristic"})
+// 检索增强（混合召回、相关性门槛、重排、模型改写）在 PipelineTest 等专门的测试里按默认值开启验证；
+// 这里显式关闭，使以授权、效力、可靠性为目标的既有用例不受排序变化影响。
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, TestEmbeddingConfiguration.class})
 public abstract class IntegrationTest {

@@ -98,11 +98,14 @@ public class IngestionWorker {
       // 认领时已确认有提供方；运行中被移除按普通失败处理，任务回到队列由其他实例接手。
       if (provider == null) throw new IllegalStateException("embedding provider unavailable");
       // 向量在写事务之前计算，因此模型调用期间不持有行锁。
-      var vectors = chunks.isEmpty() ? List.<float[]>of() : provider.embed(chunks.stream().map(TextChunker.Chunk::text).toList(), lost::get);
+      // 向量化时把"文档标题 › 标题路径"放在正文前，孤立的条款也带着所属制度和章节。
+      var title = repository.documentTitle(job.versionId());
+      var vectors = chunks.isEmpty() ? List.<float[]>of()
+          : provider.embed(chunks.stream().map(c -> ChunkContext.embedText(title, c.path(), c.text())).toList(), lost::get);
       int dimension = chunks.isEmpty() ? 0 : EmbeddingVectors.validate(vectors, chunks.size());
       boolean written = Boolean.TRUE.equals(tx.execute(status -> {
         if (!repository.holdsLease(job.jobId(), owner)) return false;
-        var ids = repository.replaceChunks(job.versionId(), chunks);
+        var ids = repository.replaceChunks(job.versionId(), chunks, title);
         repository.insertEmbeddings(ids, vectors, provider.model(), dimension);
         repository.succeed(job.jobId(), job.versionId());
         return true;

@@ -156,3 +156,32 @@ describe("request recovery", () => {
     expect(messagePage).toHaveBeenLastCalledWith("conv", { limit: 2, before: "cursor-1" });
   });
 });
+
+describe("refusals and cited sources", () => {
+  it("shows a no-evidence refusal as a normal answer, without an error style or retry", async () => {
+    const refused: HistoryMessage = { ...answered, id: "m3", answer: null, status: "refused", errorCode: "NO_EVIDENCE" };
+    render(<LiveQa client={clientWith({ conversations: vi.fn(async () => [conversation]), messages: vi.fn(async () => [refused]) })} kbId="kb" modelEnabled />);
+    fireEvent.click(await screen.findByText("虚构会话"));
+    expect(await screen.findByText(/资料中没有足够依据回答这个问题/)).toBeTruthy();
+    expect(document.querySelector(".ant-alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: /重试/ })).toBeNull();
+  });
+
+  it("lists only the sources the answer cited, keeping their numbers, and shows the support check", async () => {
+    const withSources: HistoryMessage = {
+      ...answered, id: "m4", answer: "依据第二条[2]。",
+      citations: [
+        { documentId: "d1", versionId: "v1", title: "未引用的资料", excerpt: "甲", index: 1, cited: false },
+        { documentId: "d2", versionId: "v2", title: "被引用的资料", excerpt: "乙", index: 2, cited: true },
+      ],
+      support: { checked: 1, supported: 1, weak: [] },
+    };
+    render(<LiveQa client={clientWith({ conversations: vi.fn(async () => [conversation]), messages: vi.fn(async () => [withSources]) })} kbId="kb" modelEnabled />);
+    fireEvent.click(await screen.findByText("虚构会话"));
+    fireEvent.click(await screen.findByText(/依据第二条/));
+    expect(await screen.findByText("被引用的资料")).toBeTruthy();
+    expect(screen.queryByText("未引用的资料")).toBeNull();
+    expect(screen.getByText("#2")).toBeTruthy();
+    expect(screen.getByText(/引用核对：1\/1 句/)).toBeTruthy();
+  });
+});

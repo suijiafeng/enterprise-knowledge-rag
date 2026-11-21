@@ -894,8 +894,13 @@ components:
               startOffset: {type: integer}
               endOffset: {type: integer}
               text: {type: string}
-              score: {type: number, description: cosine similarity; not a confidence in the answer}
+              score: {type: number, description: ranking score of the last stage that ran (cosine, RRF or rerank); not a confidence in the answer}
               rank: {type: integer}
+              vectorScore: {type: number, description: cosine similarity}
+              lexicalScore: {type: number, nullable: true, description: share of the query's distinct character bigrams found in the chunk and its context}
+              fusedScore: {type: number, nullable: true, description: reciprocal rank fusion score when hybrid retrieval ran}
+              rerankScore: {type: number, nullable: true, description: lexical BM25 + vector blend when rerank ran}
+              context: {type: string, description: "document title › heading path"}
     KnowledgeBaseConfig:
       type: object
       properties:
@@ -976,6 +981,8 @@ components:
         versionId: {type: string}
         title: {type: string}
         excerpt: {type: string}
+        index: {type: integer, description: "the n of marker [n] in the answer"}
+        cited: {type: boolean, description: whether the answer cites this source; clients list only cited sources}
     Validated:
       type: object
       description: Source metadata checks only; not semantic verification.
@@ -985,6 +992,14 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Citation'}
         validation: {type: string, const: metadata-only}
+        support:
+          type: object
+          description: Lexical citation support check (hint only, not semantic verification).
+          properties:
+            checked: {type: integer, description: sentences carrying a marker}
+            supported: {type: integer, description: of those, sentences whose bigrams are at least 30% covered by the cited sources}
+            weak: {type: array, items: {type: integer}, description: 1-based positions among checked sentences}
+            method: {type: string, const: lexical}
     Done:
       type: object
       required: [status]
@@ -996,7 +1011,7 @@ x-sse:
   fields:
     start: {requestId: string, traceId: uuid, configVersion: "integer (0 = deployment defaults)", clientRequestId: "uuid (when sent)"}
     draft: {text: string, seq: "integer, 1-based, increasing"}
-    validated: {citations: array, validation: metadata-only}
+    validated: {citations: "array (index, cited)", validation: metadata-only, support: "{checked, supported, weak, method: lexical}"}
     done: {status: complete, finishReason: stop, conversationId: uuid, messageId: uuid, traceId: uuid, latencyMs: integer}
     error: {code: string, message: string, requestId: string, traceId: uuid, retryable: boolean, discardDraft: true}
   notYetReported: [message_id in start (assigned when the answer is stored), token usage]
@@ -1007,11 +1022,13 @@ x-sse:
     - retryable is true only for MODEL_UNAVAILABLE and DEPENDENCY_UNAVAILABLE; a retry is a new question with a new clientRequestId, never an automatic re-POST.
     - Draft is provisional. Metadata validation does not establish semantic correctness.
     - Disconnect, cancellation or error must not preserve a usable answer. Every turn is stored with status complete | refused (NO_EVIDENCE) | cancelled | failed; only complete turns keep answer text and sources, and only they enter follow-up context or accept feedback.
-    - validated.citations lists every source given to the model in order; marker [n] refers to citations[n-1].
+    - validated.citations lists every source given to the model in order; marker [n] refers to citations[n-1] (index = n). cited marks the sources the answer actually cites; all of them stay dependencies of the answer.
+    - Retrieval keeps a candidate only if its cosine similarity reaches zhiku.retrieval.min-score or the question's bigram coverage reaches min-lexical-coverage; when none remain, the turn ends with NO_EVIDENCE before the model is called. A model answer that says the sources are insufficient and cites nothing also ends with NO_EVIDENCE. Clients show NO_EVIDENCE as a normal answer, not as an error.
+    - Instruction-like sentences inside sources (ignore the rules, change role, do not cite…) are replaced with a mask before reaching the model.
     - done.data includes conversationId (to continue), messageId (for feedback) and traceId; error.data includes traceId once retrieval has started.
     - Before validated the server checks that markers exist and are in range, then re-reads grants and version eligibility.
     - A conversation accepts at most zhiku.chat.max-turns turns (default 100); beyond that CONVERSATION_TOO_LONG asks for a new conversation. An answer is stale when its own sources or those of any earlier turn it was generated from are no longer current; a context answer expiring during generation stops the turn.
-    - Follow-ups (conversationId) use at most the last three prior turns as non-evidence context; turns with unavailable sources are excluded entirely, answers based on non-current versions keep only the question. Retrieval uses the previous visible question plus the new one; facts still come only from freshly retrieved eligible sources.
+    - Follow-ups (conversationId) use at most the last three prior turns as non-evidence context; turns with unavailable sources are excluded entirely, answers based on non-current versions keep only the question. Retrieval uses a rewritten standalone question (zhiku.chat.query-rewrite: llm with heuristic fallback); facts still come only from freshly retrieved eligible sources.
   errorCodes: [NO_EVIDENCE, SENSITIVE_INPUT, CONVERSATION_TOO_LONG, CONTEXT_TOO_LONG, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE, ANSWER_TOO_LONG]
 x-auth:
   status: implemented (local HS256 issuer; OIDC provider replaceable)

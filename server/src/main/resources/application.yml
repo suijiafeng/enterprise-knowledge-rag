@@ -44,14 +44,14 @@ zhiku:
     # 同时处理的摄取任务数：一个卡住的任务只占一个槽，其他文档照常完成。
     concurrency: 4
   embedding:
-    # none | ollama。为 none 时，导入会保存 chunk 但将版本标记为失败：没有向量就无法被检索。
+    # none | ollama | mock。mock 是本地演示与 CI 用的确定性二元组哈希向量，不理解语义。为 none 时，导入会保存 chunk 但将版本标记为失败：没有向量就无法被检索。
     provider: ${ZHIKU_EMBEDDING_PROVIDER:none}
     base-url: ${ZHIKU_OLLAMA_URL:http://127.0.0.1:11434}
     model: ${ZHIKU_EMBEDDING_MODEL:bge-m3}
     batch-size: 32
     timeout: PT60S
   chat:
-    # none | ollama。为 none 时，POST /api/chat 返回 503。
+    # none | ollama | mock。为 none 时，POST /api/chat 返回 503；mock 是抽取式演示模型，不调用外部服务。
     provider: ${ZHIKU_CHAT_PROVIDER:none}
     base-url: ${ZHIKU_OLLAMA_URL:http://127.0.0.1:11434}
     model: ${ZHIKU_CHAT_MODEL:qwen3.5:latest}
@@ -74,6 +74,8 @@ zhiku:
     max-turns: 100
     # 草稿流式输出期间，授权和来源效力最多按此频率重新读取；变更会在此间隔内被发现。
     recheck-interval: PT1S
+    # 追问改写：llm（模型改写，失败退回规则）| heuristic（只用规则）| off。
+    query-rewrite: ${ZHIKU_QUERY_REWRITE:llm}
   retention:
     # 只清理诊断数据：检索轨迹与问答请求去重记录；问答记录、反馈、审计不在此列。天数为部署默认值，正式保留期待业务确认。
     enabled: true
@@ -88,6 +90,17 @@ zhiku:
   retrieval:
     default-k: 8
     max-k: 30
+    # 相关性门槛：向量相似度 ≥ min-score，或问题二元组覆盖率 ≥ min-lexical-coverage，才可作为依据；都不满足即"资料不足"。
+    # 阈值随 embedding 模型变化（bge-m3 与 mock 的分布不同），上线前用评测集校准。
+    min-score: ${ZHIKU_RETRIEVAL_MIN_SCORE:0.45}
+    min-lexical-coverage: ${ZHIKU_RETRIEVAL_MIN_LEXICAL:0.35}
+    # 混合召回：向量 + 字符二元组词法召回，RRF 融合。
+    hybrid: true
+    # 问答与检索调试默认重排；rerank-pool 是送入重排的候选数。
+    rerank: true
+    rerank-pool: 20
+    # 合格 chunk 数达到该值时改走 HNSW 近似检索（V27 为 256/768/1024/1536 维建了索引），否则精确检索。
+    ann-min-chunks: ${ZHIKU_RETRIEVAL_ANN_MIN_CHUNKS:5000}
   auth:
     # 本地签发 token 的 HS256 密钥；至少 32 字节。为空表示拒绝所有 token。
     jwt-secret: ${ZHIKU_JWT_SECRET:}

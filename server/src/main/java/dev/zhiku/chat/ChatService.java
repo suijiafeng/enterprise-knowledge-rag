@@ -60,9 +60,12 @@ public class ChatService {
   private final TransactionTemplate tx;
   private final FeedbackRepository feedback;
   private final ConfigService configs;
+  private final QueryRewriter rewriter;
 
   public ChatService(RetrievalService retrieval, DocumentService documents, GrantLookup grants, ObjectProvider<ChatModel> models,
-      ChatRepository repository, ChatSettings settings, TransactionTemplate tx, FeedbackRepository feedback, ConfigService configs) {
+      ChatRepository repository, ChatSettings settings, TransactionTemplate tx, FeedbackRepository feedback, ConfigService configs,
+      QueryRewriter rewriter) {
+    this.rewriter = rewriter;
     this.configs = configs;
     this.feedback = feedback;
     this.retrieval = retrieval;
@@ -192,12 +195,17 @@ public class ChatService {
       return;
     }
     var history = conversationId == null ? List.<MessageView>of() : priorContext(scope, conversationId);
-    // 追问与上一个可见问题一起检索，使“那试用期呢”这类指代能够解析。
-    var searchQuery = history.isEmpty() ? question : history.getLast().question() + "\n" + question;
+    // 追问改写成独立问题再检索，使“那试用期呢”这类指代能够解析，换了话题的问题也不会被上一问带偏。
+    var rewrite = rewriter.rewrite(model, question, history);
+    if (sink.cancelled()) {
+      record(turn, "cancelled", null);
+      return;
+    }
     List<Candidate> retrieved;
     try {
-      // 召回 K 条，最多把前 contextChunks 条交给模型。
-      var all = retrieval.searchAuthorized(scope, kbId, searchQuery, config.retrievalK(), Instant.now(), "chat", turn.traceId(), config.version()).candidates();
+      // 召回 K 条（混合召回 + 相关性门槛 + 重排），最多把前 contextChunks 条交给模型。
+      var all = retrieval.searchAuthorized(scope, kbId, rewrite.query(), config.retrievalK(), Instant.now(), "chat", turn.traceId(), config.version(),
+          retrieval.defaultRerank(config.retrievalK()), rewrite.stage()).candidates();
       retrieved = all.subList(0, Math.min(all.size(), config.contextChunks()));
     } catch (ApiException e) {
       fail(turn, sink, "DEPENDENCY_UNAVAILABLE", "检索服务暂不可用", requestId);
@@ -208,7 +216,7 @@ public class ChatService {
       return;
     }
     if (retrieved.isEmpty()) {
-      fail(turn, sink, "NO_EVIDENCE", "知识库中没有找到可依据的内容，请联系" + handoff(config.handoffChannel()), requestId);
+      fail(turn, sink, "NO_EVIDENCE", noEvidence(config), requestId);
       return;
     }
     // 总预算覆盖全部入模内容：先给第一块证据留位，再从最近一轮起纳入前序对话，最后纳入其余证据。
@@ -274,7 +282,8 @@ public class ChatService {
     var text = answer.toString();
     switch (CitationCheck.check(text, sources.size())) {
       case NONE -> {
-        fail(turn, sink, "NO_EVIDENCE", "回答没有可核对的引用，已丢弃", requestId);
+        // 模型按规则说"资料不足"是正常拒答，不是故障；其他没有引用的回答无法核对，丢弃。
+        fail(turn, sink, "NO_EVIDENCE", modelRefused(text) ? noEvidence(config) : "回答没有可核对的引用，已丢弃", requestId);
         return;
       }
       case OUT_OF_RANGE -> {
@@ -304,12 +313,21 @@ public class ChatService {
       return new UUID[] {id, messageId};
     });
 
-    var citations = sources.stream().map(s -> Map.of("documentId", s.documentId().toString(), "versionId", s.versionId().toString(),
-        "title", s.title(), "excerpt", excerpt(s.text()))).toList();
-    sink.send("validated", Map.of("citations", citations, "validation", "metadata-only"));
+    // 送入模型的全部来源都保存为依赖（撤回任何一条都会隐藏这条回答）；展示时只列出回答真正引用的。
+    var cited = CitationSupport.cited(text);
+    var citations = new ArrayList<Map<String, Object>>();
+    for (int i = 0; i < sources.size(); i++) {
+      var s = sources.get(i);
+      citations.add(Map.of("documentId", s.documentId().toString(), "versionId", s.versionId().toString(),
+          "title", s.title(), "excerpt", excerpt(s.text()), "index", i + 1, "cited", cited.contains(i + 1)));
+    }
+    var support = CitationSupport.check(text, sources.stream().map(Candidate::searchText).toList());
+    sink.send("validated", Map.of("citations", citations, "validation", "metadata-only", "support", supportView(support)));
     retrieval.recordGeneration(turn.traceId(), Stage.timed("generation", "上下文与生成", "success", turn.modelStarted()[0],
         "入模 " + sources.size() + " 块" + (squeezedOut == 0 ? "" : "（预算挤出 " + squeezedOut + " 块）")
-            + (droppedTurns == 0 ? "" : "（前序对话省略 " + droppedTurns + " 轮）") + " · 模型 " + model.model() + " · 引用元数据检查通过"));
+            + (droppedTurns == 0 ? "" : "（前序对话省略 " + droppedTurns + " 轮）")
+            + (maskedInstructions(sources) == 0 ? "" : " · 屏蔽资料中疑似指令 " + maskedInstructions(sources) + " 处")
+            + " · 模型 " + model.model() + " · 引用元数据检查通过 · 引用支撑 " + support.supported() + "/" + support.checked() + " 句"));
     retrieval.linkMessage(turn.traceId(), stored[1]);
     var done = new LinkedHashMap<String, Object>();
     done.put("status", "complete");
@@ -355,8 +373,32 @@ public class ChatService {
     return sb.toString();
   }
 
+  /** 资料不足时的拒答文案：作为正常回答展示，并指向人工渠道。 */
+  static String noEvidence(ConfigService.Effective config) {
+    return "资料中没有足够依据回答这个问题。可以换个说法再问，或联系" + handoff(config.handoffChannel()) + "。";
+  }
+
+  static boolean modelRefused(String text) {
+    return text != null && (text.contains("没有足够依据") || text.contains("资料不足"));
+  }
+
+  static Map<String, Object> supportView(CitationSupport.Result r) {
+    return Map.of("checked", r.checked(), "supported", r.supported(), "weak", r.weak(), "method", "lexical");
+  }
+
+  private int maskedInstructions(List<Candidate> sources) {
+    int n = 0;
+    for (var s : sources) n += InjectionGuard.sanitize(body(s)).masked();
+    return n;
+  }
+
+  private String body(Candidate s) {
+    return s.text().length() > settings.maxChunkChars() ? s.text().substring(0, settings.maxChunkChars()) : s.text();
+  }
+
+  /** 资料块：疑似指令先屏蔽，再转义分隔符；模型只把 <<< >>> 之间当作资料。 */
   private String chunkText(int i, Candidate s) {
-    var body = s.text().length() > settings.maxChunkChars() ? s.text().substring(0, settings.maxChunkChars()) : s.text();
+    var body = InjectionGuard.sanitize(body(s)).text();
     return "[" + (i + 1) + "] " + s.title() + "（" + s.versionLabel() + "）\n<<<\n" + body.replace("<<<", "‹‹‹").replace(">>>", "›››") + "\n>>>\n";
   }
 
@@ -487,10 +529,18 @@ public class ChatService {
   }
 
   /** 历史的读取端：每个派生回答都会按其来源依赖重新检查。 */
-  public record CitationView(String documentId, String versionId, String title, String excerpt) {}
+  /** index 是回答里 [n] 的编号；cited 表示回答实际引用了它（界面只列出被引用的来源）。 */
+  public record CitationView(String documentId, String versionId, String title, String excerpt, int index, boolean cited) {}
 
+  /** support 只在完成的回答上非空：词面引用支撑检查结果。 */
   public record MessageView(UUID id, String question, String answer, boolean hidden, String reason, boolean stale,
-      List<CitationView> citations, Instant createdAt, FeedbackRepository.FeedbackView feedback, String status, String errorCode) {}
+      List<CitationView> citations, Instant createdAt, FeedbackRepository.FeedbackView feedback, String status, String errorCode,
+      Map<String, Object> support) {
+    public MessageView(UUID id, String question, String answer, boolean hidden, String reason, boolean stale,
+        List<CitationView> citations, Instant createdAt, FeedbackRepository.FeedbackView feedback, String status, String errorCode) {
+      this(id, question, answer, hidden, reason, stale, citations, createdAt, feedback, status, errorCode, null);
+    }
+  }
 
   public record ConversationView(UUID id, UUID kbId, String title, Instant updatedAt) {}
 
@@ -534,8 +584,15 @@ public class ChatService {
       boolean stale = sources.stream().anyMatch(s -> !eligibleNow.contains(s.versionId()))
           || context.getOrDefault(m.id(), Set.of()).stream().anyMatch(d -> staleById.getOrDefault(d, false));
       staleById.put(m.id(), stale);
-      var citations = sources.stream().map(s -> new CitationView(s.documentId().toString(), s.versionId().toString(), s.title(), excerpt(s.chunkText()))).toList();
-      return new MessageView(m.id(), m.question(), m.answer(), false, null, stale, citations, m.createdAt(), ratings.get(m.id()), m.status(), null);
+      var cited = CitationSupport.cited(m.answer());
+      var citations = new ArrayList<CitationView>();
+      for (int i = 0; i < sources.size(); i++) {
+        var s = sources.get(i);
+        citations.add(new CitationView(s.documentId().toString(), s.versionId().toString(), s.title(), excerpt(s.chunkText()), i + 1, cited.contains(i + 1)));
+      }
+      var support = CitationSupport.check(m.answer(), sources.stream().map(s -> s.title() + "\n" + s.chunkText()).toList());
+      return new MessageView(m.id(), m.question(), m.answer(), false, null, stale, List.copyOf(citations), m.createdAt(), ratings.get(m.id()), m.status(), null,
+          supportView(support));
     }).toList();
   }
 

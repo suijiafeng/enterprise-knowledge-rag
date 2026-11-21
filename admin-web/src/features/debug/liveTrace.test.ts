@@ -23,4 +23,17 @@ describe("traceFromResult", () => {
     expect(trace.candidates[0]).toMatchObject({ vector: 0.91, lexical: null, fused: null, rerank: null, finalRank: 1, usage: "none", chunk: "#002" });
     expect(trace.params.find((p) => p.label.startsWith("Embedding"))?.value).toBe("ollama:bge-m3 · 1024 维");
   });
+
+  it("shows every stage score the hybrid pipeline reports", () => {
+    const hybrid: TraceResult = {
+      ...result,
+      stages: [...result.stages.slice(0, 4), { key: "relevance", name: "相关性门槛", status: "success", elapsedMs: 0, summary: "保留 1 / 3 条" },
+        { key: "rerank", name: "重排", status: "success", elapsedMs: 1, summary: "BM25 + 向量" }],
+      candidates: [{ ...result.candidates[0]!, score: 0.7, vectorScore: 0.42, lexicalScore: 0.75, fusedScore: 0.032, rerankScore: 0.7 }],
+    };
+    const trace = traceFromResult(hybrid, "制度库", "授权版本 实时");
+    expect(trace.stages.map((s) => s.key)).toContain("relevance");
+    expect(trace.candidates[0]).toMatchObject({ vector: 0.42, lexical: 0.75, fused: 0.032, rerank: 0.7 });
+    expect(trace.params.find((p) => p.label === "相关性门槛")?.value).toBe("保留 1 / 3 条");
+  });
 });

@@ -101,7 +101,7 @@ class IngestionTest extends IntegrationTest {
     assertThat(jobStatus()).isEqualTo("succeeded");
     assertThat(indexStatus()).isEqualTo("ready");
     assertThat(chunks()).isGreaterThan(0);
-    assertThat(jdbc.queryForObject("SELECT heading FROM chunk WHERE version_id = ? ORDER BY seq LIMIT 1", String.class, version)).isEqualTo("员工手册");
+    assertThat(jdbc.queryForObject("SELECT heading FROM chunk WHERE version_id = ? ORDER BY seq LIMIT 1", String.class, version)).isEqualTo("年假");
     assertThat(worker.processNext()).isFalse();
   }
 

@@ -41,6 +41,17 @@ class LexicalRerankerTest {
     assertThat(cosine(query, repeated)).isGreaterThan(cosine(query, diluted));
   }
 
+  @Test
+  void keywordStuffingDoesNotOutrankTheDocumentThatAnswers() {
+    var query = "年假申请要提前几天";
+    var stuffed = candidate("年假窗口说明", "年假申请窗口".repeat(6) + "。此页只说明申请入口名称，没有天数。", 0.43, 1);
+    var gold = candidate("年假办法", "司龄满十年的员工每年可以休假十五天。申请须提前三个工作日。", 0.29, 2);
+    var ranked = LexicalReranker.rerank(query, List.of(stuffed, gold), 2);
+    assertThat(ranked.getFirst().title()).isEqualTo("年假办法");
+    assertThat(LexicalReranker.stuffing(Bigrams.all("年假申请窗口".repeat(6)))).isLessThan(0.3);
+    assertThat(LexicalReranker.stuffing(Bigrams.all("司龄满十年的员工每年可以休假十五天"))).isEqualTo(1.0);
+  }
+
   private static double cosine(float[] left, float[] right) {
     double dot = 0;
     double a = 0;

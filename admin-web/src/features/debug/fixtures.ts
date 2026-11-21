@@ -3,7 +3,7 @@
  * 在授权范围内做精确向量检索；未启用词法检索、融合与重排。
  */
 export type StageStatus = "success" | "failed" | "skipped" | "cancelled";
-export type StageKey = "rewrite" | "vector" | "lexical" | "fusion" | "rerank" | "generation";
+export type StageKey = "rewrite" | "vector" | "lexical" | "fusion" | "relevance" | "rerank" | "generation";
 export type ScoreKey = "vector" | "lexical" | "fused" | "rerank";
 
 export interface Stage {
