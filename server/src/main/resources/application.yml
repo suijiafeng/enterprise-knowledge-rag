@@ -120,6 +120,8 @@ zhiku:
     accounts: false
   rate-limit:
     enabled: true
+    # 计数存放：memory（默认，单实例/开发）或 postgres（多实例共享，表 rate_limit_window）。
+    store: ${ZHIKU_RATE_LIMIT_STORE:memory}
     # 每个来源 IP 的登录尝试
     login: {limit: 10, window: PT1M}
     # 每个用户名的登录尝试（分散 IP 猜同一账号）
