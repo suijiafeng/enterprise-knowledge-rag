@@ -23,3 +23,14 @@ chat 依赖 auth、document 的资格选择、retrieval 和 citation 的公开�
 未来 migration 应区分 document、content_version、business_effectivity、index_version、ingestion_job、source_dependency。ingestion_job 持久落库/租约/幂等完成后才可声称可恢复任务；@Async 不是队列。
 先确认主题、受众、业务时区和替代关系，再在授权有效版本集合内检索。示例策略仅覆盖一个已确认主题/适用范围；不实现替代关系图或完整业务引擎。不得直接用于生产判定。
 embedding 维度不写死：每行记录模型与维度，检索只比较同一空间。没有模型不生成假向量（测试用确定性测试向量，仅存在于测试代码）。中文词法、ANN、reranker 以后用评测证明收益。
+
+## 问答检索链路
+
+1. 查询改写：有对话历史时把追问改写成独立问题（`zhiku.chat.query-rewrite`：llm，失败回退启发式；heuristic；off）。改写只用于检索，事实仍只来自本轮检索到的合格来源。
+2. 双路召回：合格版本内的向量检索（合格 chunk 数 ≥ `ann-min-chunks` 时走 HNSW，`hnsw.iterative_scan = relaxed_order`，否则精确余弦）＋ 字符二元组 `tsvector` 词法召回（GIN 索引，中文不依赖分词器）。
+3. RRF 融合（k = 60）。
+4. 相关性门槛：向量相似度 ≥ `min-score` 或问题二元组覆盖率 ≥ `min-lexical-coverage` 才保留。一条都不剩时直接返回 NO_EVIDENCE，不调用模型。阈值随 embedding 模型变化，需要用评测集校准。
+5. 重排：候选池内字符二元组 BM25 与向量分加权，关键词堆砌（二元组重复率高）的候选降权。不是交叉编码器。
+6. 生成：来源正文里的指令式句子（忽略规则、改变角色、不要引用……）替换为屏蔽标记后再给模型。回答后核对引用编号、版本和授权，再按字面检查每句是否能在所引来源中找到（`support`），只提示不拦截。模型自己说"资料不足"且无引用时，按 NO_EVIDENCE 正常回答展示。
+
+chunk 按 Markdown 章节切分，不跨章节；每个 chunk 存「文档标题 › 章节路径」上下文，向量化与词法召回都带上它。
