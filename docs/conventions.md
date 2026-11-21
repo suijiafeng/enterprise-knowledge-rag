@@ -15,3 +15,10 @@ POST + fetch SSE：start → draft → validated → done；error 为终止失�
 迁移 `V<number>__description.sql`，已发布 migration 不改，新增前向版本；禁止生产自动 clean/drop 或 ORM ddl-auto=update。必须验证空库迁移、升级、权限隔离和数据回滚方案。
 单测检验边界和失败，集成测真实 Postgres/pgvector，端到端覆盖撤权/断流/效力切换；mock 无法证明真实召回质量。评测真值用文档/版本/页码或字符区间，与 chunk_id 解耦。
 固定直接依赖和 lockfile；更新说明原因、兼容性和安全检查，禁止随意 latest。CI 不使用真实密钥、不发送企业资料。每次变更最少执行对应包 README 的检查；CI 必须真实失败。
+
+## 管理后台交互约定
+
+- 一次性结果（保存成功、已授权、提交失败等）用 antd `App.useApp().message` 的 toast（`src/notice.ts` 的 `useNotice`），不在页面顶部堆 Alert。需要用户处理的问题留在原处：加载失败带重试、配置冲突、弹窗内的表单错误、模型未启用等。
+- 弹窗和抽屉的关闭图标统一在右上角，主操作按钮在右下角；页面级主操作放在标题行右侧。
+- 每个导航页是 `src/routes/` 下的独立懒加载模块；`App.tsx` 不要直接引入页面组件或 `pageFor`，否则会把所有页面打回首包。
+- 授权列表里的姓名、邮箱、部门来自 `directory_user`（身份提供方的本地镜像，开发环境由 `scripts/dev-seed.sql` 填充），目录里没有的用户显示「未同步到目录」和用户 ID。
