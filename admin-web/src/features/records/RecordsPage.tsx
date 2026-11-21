@@ -1,4 +1,5 @@
 import { Alert, Button, Card, Col, Modal, Progress, Row, Segmented, Select, Table, Tag, Typography } from "antd";
+import { useNotice } from "../../notice";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type EvalCase, type FeedbackReason, type FeedbackStatus, type FeedbackUpdate, type HandlingEntry, type RecordItem, type RecordStats, type StoredTrace } from "../../api/client";
@@ -146,14 +147,14 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
   }, [client, kbId, filter]);
   useEffect(() => void load(), [load]);
 
-  const [notice, setNotice] = useState<string>();
+  const notice = useNotice();
   const onCandidate = async (item: RecordItem) => {
     if (!client || !kbId || !item.question) return;
     try {
       await client.createEvalCase(kbId, candidateBody(item));
-      setNotice("已加入评测候选，请到评测中心补齐证据后批准。");
+      notice.success("已加入评测候选，请到评测中心补齐证据后批准。", 4);
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "加入失败");
+      notice.error(e instanceof ApiError ? `${e.message}（${e.code}）` : "加入失败", 5);
     }
   };
 
@@ -164,7 +165,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
       const expected = { expectedVersion: item?.feedbackVersion ?? 1, expectedHandlingRevision: item?.handlingRevision ?? 0 };
       await client.updateFeedback(kbId, messageId, rootCause ? { ...expected, status, rootCause } : { ...expected, status });
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "更新失败");
+      notice.error(e instanceof ApiError ? `${e.message}（${e.code}）` : "更新失败", 5);
     }
     await load();
   };
@@ -189,6 +190,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
       return closeFailure(e, body.status);
     }
     setClosing(undefined);
+    notice.success(body.status === "resolved" ? "已标记为已解决" : "已标记为无需处理");
     await load();
     return undefined;
   };
@@ -199,7 +201,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
     try {
       setHistory(await client.feedbackHistory(kbId, item.messageId));
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "读取处理记录失败");
+      notice.error(e instanceof ApiError ? `${e.message}（${e.code}）` : "读取处理记录失败", 5);
     }
   };
 
@@ -209,7 +211,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
     try {
       setTrace(await client.trace(kbId, item.traceId));
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "读取轨迹失败");
+      notice.error(e instanceof ApiError ? `${e.message}（${e.code}）` : "读取轨迹失败", 5);
     }
   };
 
@@ -231,7 +233,6 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
       </div>
       {(!client || !kbId) && <Alert type="info" showIcon className="scaffold-alert" title="连接本地服务并选择知识库后查看问答记录" description="需要知识库运营角色。本页不展示虚构的用户或问答。" />}
       {error && <Alert type="error" showIcon className="scaffold-alert" title={error} />}
-      {notice && <Alert type="success" showIcon closable className="scaffold-alert" title={notice} onClose={() => setNotice(undefined)} />}
       {client && kbId && (
         <Row gutter={[16, 16]}>
           <Col xs={24} xl={17}>

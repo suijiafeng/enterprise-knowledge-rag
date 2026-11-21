@@ -60,6 +60,27 @@ class AdminApiTest extends IntegrationTest {
   }
 
   @Test
+  void itAdminSearchesTheDirectoryOfOwnEnterpriseAndGrantsShowNames() throws Exception {
+    var other = UUID.randomUUID();
+    jdbc.update("INSERT INTO directory_user (id, enterprise_id, display_name, email, department) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)",
+        member, enterprise, "周若溪（示例）", "zhou@example.com", "人力资源部",
+        other, enterprise, "陈一鸣（示例）", "chen@example.com", "财务部",
+        UUID.randomUUID(), UUID.randomUUID(), "外企业用户", "x@example.com", "财务部");
+    mvc.perform(as(get("/api/admin/users").param("q", "财务"), admin, Role.IT_ADMIN))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].id").value(other.toString()))
+        .andExpect(jsonPath("$[0].displayName").value("陈一鸣（示例）"));
+    mvc.perform(as(get("/api/admin/users").param("q", "%"), admin, Role.IT_ADMIN)).andExpect(jsonPath("$.length()").value(0));
+    mvc.perform(as(get("/api/admin/users").param("q", member.toString()), admin, Role.IT_ADMIN)).andExpect(jsonPath("$[0].email").value("zhou@example.com"));
+    mvc.perform(as(get("/api/admin/users"), admin, Role.IT_ADMIN)).andExpect(jsonPath("$.length()").value(2));
+    mvc.perform(as(get("/api/admin/users"), member, Role.KB_OPERATOR)).andExpect(status().isForbidden());
+    mvc.perform(as(get("/api/knowledge-bases/{kb}/grants", kb), admin, Role.IT_ADMIN))
+        .andExpect(jsonPath("$[0].displayName").value("周若溪（示例）"))
+        .andExpect(jsonPath("$[0].department").value("人力资源部"));
+  }
+
+  @Test
   void nonAdminsCannotUseAdminListings() throws Exception {
     mvc.perform(as(get("/api/admin/knowledge-bases"), member, Role.KB_OPERATOR, Role.EMPLOYEE)).andExpect(status().isForbidden());
     mvc.perform(as(get("/api/knowledge-bases/{kb}/grants", kb), member, Role.KB_OPERATOR)).andExpect(status().isForbidden());

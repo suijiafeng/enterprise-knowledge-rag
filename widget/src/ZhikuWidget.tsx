@@ -77,6 +77,22 @@ export function ZhikuWidget({
   greeting = "你好，我是知识库助手，可以问我公司制度、流程相关问题。", quickQuestions = [], defaultOpen = false,
 }: ZhikuWidgetProps) {
   const [open, setOpen] = useState(defaultOpen);
+  // 一次性提示（反馈成功 / 失败）：面板顶部浮出，几秒后自动消失，与管理端的 message 一致。
+  const [toast, setToast] = useState<{ text: string; kind: "ok" | "error" }>();
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const notify = (text: string, kind: "ok" | "error") => {
+    clearTimeout(toastTimer.current);
+    setToast({ text, kind });
+    toastTimer.current = setTimeout(() => setToast(undefined), kind === "error" ? 4000 : 2500);
+  };
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+  // Esc 关闭面板，和右上角的关闭按钮等效。
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [expanded, setExpanded] = useState<{ turn: number; n: number }>();
@@ -168,7 +184,12 @@ export function ZhikuWidget({
   const rate = async (turn: Turn, rating: "up" | "down", reason?: FeedbackReason) => {
     if (!turn.messageId) return;
     const result = await rateMessage({ endpoint, messageId: turn.messageId, rating, ...(reason ? { reason } : {}), ...tokenOpts });
-    update(turn.id, result.ok ? { rating, picking: false, error: undefined } : { error: "反馈提交失败" });
+    if (result.ok) {
+      update(turn.id, { rating, picking: false });
+      notify("已收到反馈，谢谢", "ok");
+    } else {
+      notify("反馈提交失败，请稍后再试", "error");
+    }
   };
 
   const submit = (e: FormEvent) => {
@@ -198,6 +219,7 @@ export function ZhikuWidget({
             </div>
             <button type="button" className="zhiku-close" aria-label="关闭" onClick={() => setOpen(false)}>×</button>
           </header>
+          {toast && <div className={`zhiku-toast zhiku-toast-${toast.kind}`} role="status" aria-live="polite">{toast.text}</div>}
           <div className="zhiku-body" ref={body} onScroll={(e) => {
             const el = e.currentTarget;
             followBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
@@ -230,7 +252,6 @@ export function ZhikuWidget({
                           {t.picking && REASONS.map((r) => (
                             <button key={r.key} type="button" onClick={() => void rate(t, "down", r.key)}>{r.label}</button>
                           ))}
-                          {t.error && <span className="zhiku-error">{t.error}</span>}
                         </div>
                       )}
                     </>

@@ -109,7 +109,8 @@ paths:
         dependencies: if any source version is withdrawn, deleted, re-indexed or cannot be verified, the answer and citations
         are hidden and question is replaced with a fixed notice (hidden=true, reason=SOURCE_UNAVAILABLE).
         stale=true means a source is no longer the currently effective version; historical text remains available.
-        Non-complete turns carry status and errorCode with answer null.
+        Non-complete turns carry status and errorCode with answer null; a NO_EVIDENCE refusal also carries the same refusal text
+        the live stream sent (with the current handoff channel) in reason, so history and live answers read the same.
       responses:
         '200': {description: Messages}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -289,11 +290,40 @@ paths:
       responses:
         '200': {description: Knowledge bases}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /api/admin/users:
+    get:
+      operationId: searchDirectoryUsers
+      description: >-
+        IT_ADMIN only. Searches the local mirror of the identity provider's user directory (directory_user) within the caller's
+        enterprise by display name, email, department (substring, case-insensitive) or exact user id. Empty q lists the first
+        users by name. Used to pick grantees by name; grants still accept user ids that are not in the directory.
+      parameters:
+        - {name: q, in: query, required: false, schema: {type: string, maxLength: 100}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses:
+        '200':
+          description: Directory users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, displayName]
+                  properties:
+                    id: {type: string, format: uuid}
+                    displayName: {type: string}
+                    email: {type: string, nullable: true}
+                    department: {type: string, nullable: true}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
   /api/knowledge-bases/{kbId}/grants:
     parameters: [{$ref: '#/components/parameters/kbId'}]
     get:
       operationId: listGrants
-      description: IT_ADMIN of the same enterprise. User ids and grant times only; user profiles live in the identity provider.
+      description: >-
+        IT_ADMIN of the same enterprise. User id and grant time, plus displayName / email / department from the local directory
+        mirror (null when the user has not been synced from the identity provider).
       responses:
         '200': {description: Grants}
         '403': {$ref: '#/components/responses/Forbidden'}
