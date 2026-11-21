@@ -1,0 +1,9 @@
+# 生产：SPRING_PROFILES_ACTIVE=prod。StartupGuard 会在不安全的配置下拒绝启动。
+zhiku:
+  auth:
+    dev-tokens: false
+    cookie-secure: true
+  demo:
+    accounts: false
+  rate-limit:
+    enabled: true
