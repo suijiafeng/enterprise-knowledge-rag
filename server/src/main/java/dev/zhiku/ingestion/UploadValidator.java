@@ -10,7 +10,10 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Locale;
 
-/** 首版格式策略：仅支持 UTF-8 Markdown 或纯文本。忽略客户端提供的 content type。 */
+/**
+ * 格式策略：UTF-8 Markdown / 纯文本、PDF（有文字层）、Word .docx。按扩展名判断格式并核对文件头，忽略客户端提供的 content type。
+ * 这里会完整提取一次文本，确保能建立索引的文件才入库；库里保存原文件，worker 建索引时再提取。
+ */
 final class UploadValidator {
   record Accepted(String mediaType, String fileName, String text, String sha256) {}
 
@@ -21,12 +24,27 @@ final class UploadValidator {
     var dot = fileName.lastIndexOf('.');
     var ext = dot < 0 ? "" : fileName.substring(dot + 1).toLowerCase(Locale.ROOT);
     var mediaType = switch (ext) {
-      case "md", "markdown" -> "text/markdown";
-      case "txt" -> "text/plain";
-      default -> throw ApiException.unprocessable("Only .md and .txt files are supported");
+      case "md", "markdown" -> DocumentText.MARKDOWN;
+      case "txt" -> DocumentText.PLAIN;
+      case "pdf" -> DocumentText.PDF;
+      case "docx" -> DocumentText.DOCX;
+      case "doc" -> throw ApiException.unprocessable("Legacy .doc is not supported; save it as .docx");
+      default -> throw ApiException.unprocessable("Only .md, .txt, .pdf and .docx files are supported");
     };
     if (bytes.length == 0) throw ApiException.unprocessable("File is empty");
     String text;
+    if (DocumentText.PDF.equals(mediaType) || DocumentText.DOCX.equals(mediaType)) {
+      try {
+        text = DocumentText.extract(mediaType, bytes);
+      } catch (DocumentText.UnreadableException e) {
+        throw ApiException.unprocessable(e.getMessage());
+      }
+      if (text.isBlank()) {
+        throw ApiException.unprocessable(DocumentText.PDF.equals(mediaType)
+            ? "PDF has no text layer (scanned images need OCR, which is not supported)" : "Word document has no text content");
+      }
+      return new Accepted(mediaType, fileName, text, sha256(bytes));
+    }
     try {
       text = StandardCharsets.UTF_8.newDecoder()
           .onMalformedInput(CodingErrorAction.REPORT)
@@ -35,7 +53,7 @@ final class UploadValidator {
     } catch (CharacterCodingException e) {
       throw ApiException.unprocessable("File is not valid UTF-8 text");
     }
-    if (text.startsWith("﻿")) text = text.substring(1);
+    if (text.startsWith("\uFEFF")) text = text.substring(1);
     for (int i = 0; i < text.length(); i++) {
       char c = text.charAt(i);
       if (c < 0x20 && c != '\n' && c != '\r' && c != '\t') throw ApiException.unprocessable("File contains binary control characters");

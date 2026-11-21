@@ -1,5 +1,5 @@
-import { Button, Select, Space, Tag } from "antd";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button, Dropdown, Select, Space, Tag } from "antd";
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError, createAuthApi, createClient, type ApiClient, type AuthAccount, type Fetch, type KnowledgeBase, type Status, type TokenResponse } from "./api/client";
 
 export interface Session {
@@ -12,24 +12,44 @@ export interface Session {
   setKbId: (id: string) => void;
   status: Status | undefined;
   statusError: string | undefined;
-  login: (username: string, password: string) => Promise<LoginFailure | undefined>;
+  login: (username: string, password: string) => Promise<LoginResult>;
   logout: () => void;
-  /** 已登录的会话续期失败（被撤销、过期或在别处退出）后回到登录页时为 true，用来提示一次原因。 */
-  sessionLost: boolean;
+  /** 已登录的会话续期失败后回到登录页时记下原因（账号停用 / 会话被撤销 / 过期），用来提示一次。 */
+  sessionLost: SessionLost;
   acknowledgeSessionLost: () => void;
+  /** 本人改密成功后清掉「需改密」标记。 */
+  passwordChanged: () => void;
 }
+
+export type SessionLost = false | "disabled" | "revoked" | "expired";
 
 /** 登录失败：给用户看的原因；被限流时带上服务端 Retry-After 的秒数。 */
 export interface LoginFailure {
+  ok?: false;
   message: string;
   retryAfter?: number;
 }
 
+/** 登录成功时带回显示名（没有显示名时用用户名），用于欢迎提示。 */
+export interface LoginSuccess {
+  ok: true;
+  name: string;
+}
+
+export type LoginResult = LoginSuccess | LoginFailure;
+
+/** 续期失败的原因：服务端用错误码区分账号停用、会话被撤销（退出 / 踢下线）和过期。 */
+export const lostReason = (e: unknown): Exclude<SessionLost, false> =>
+  e instanceof ApiError && e.code === "ACCOUNT_DISABLED" ? "disabled" : e instanceof ApiError && e.code === "SESSION_REVOKED" ? "revoked" : "expired";
+
 const disconnected: Session = {
   client: undefined, account: undefined, restoring: false, knowledgeBases: [], kbId: undefined, setKbId: () => {},
   status: undefined, statusError: undefined, login: async () => ({ message: "未初始化" }), logout: () => {},
-  sessionLost: false, acknowledgeSessionLost: () => {},
+  sessionLost: false, acknowledgeSessionLost: () => {}, passwordChanged: () => {},
 };
+
+/** 改密弹窗（含 antd Form）只在打开时加载，不进首屏包。 */
+const ChangePasswordModal = lazy(() => import("./features/account/ChangePasswordModal").then((m) => ({ default: m.ChangePasswordModal })));
 
 const SessionContext = createContext<Session>(disconnected);
 export const useSession = () => useContext(SessionContext);
@@ -57,7 +77,7 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
   const [kbId, setKbId] = useState<string>();
   const [status, setStatus] = useState<Status>();
   const [statusError, setStatusError] = useState<string>();
-  const [sessionLost, setSessionLost] = useState(false);
+  const [sessionLost, setSessionLost] = useState<SessionLost>(false);
   const token = useRef<string | undefined>(undefined);
   const inflight = useRef<Promise<string | undefined> | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -83,8 +103,8 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
 
   /** 同一时间只发一个刷新请求：多个 401 共用结果，避免轮换中的刷新令牌被重放。 */
   const renew = useCallback((): Promise<string | undefined> => {
-    inflight.current ??= auth.refresh().then((res) => { accept(res); return res.accessToken; }, () => {
-      if (token.current) setSessionLost(true);
+    inflight.current ??= auth.refresh().then((res) => { accept(res); return res.accessToken; }, (e: unknown) => {
+      if (token.current) setSessionLost(lostReason(e));
       clear();
       return undefined;
     })
@@ -109,17 +129,22 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
   useEffect(() => {
     if (!restore) return;
     let live = true;
-    auth.refresh().then((res) => (live ? start(res) : undefined)).catch(() => undefined).finally(() => { if (live) setRestoring(false); });
+    // 打开页面时没有 cookie 或已过期是常态，不提示；cookie 还在但账号被停用或会话被撤销时，告诉用户原因。
+    auth.refresh().then((res) => (live ? start(res) : undefined)).catch((e: unknown) => {
+      const reason = lostReason(e);
+      if (live && reason !== "expired") setSessionLost(reason);
+    }).finally(() => { if (live) setRestoring(false); });
     return () => { live = false; };
   }, [auth, start, restore]);
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string): Promise<LoginResult> => {
     try {
-      await start(await auth.login(username.trim(), password));
+      const res = await auth.login(username.trim(), password);
+      await start(res);
       setSessionLost(false);
-      return undefined;
+      return { ok: true, name: res.account.displayName ?? res.account.username };
     } catch (e) {
       clear();
       const failure: LoginFailure = { message: describe(e) };
@@ -134,18 +159,27 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
   }, [auth, clear]);
 
   const acknowledgeSessionLost = useCallback(() => setSessionLost(false), []);
+  const passwordChanged = useCallback(() => setAccount((a) => (a ? { ...a, mustChangePassword: false } : a)), []);
   const value = useMemo<Session>(() => ({
-    client, account, restoring, knowledgeBases, kbId, setKbId, status, statusError, login, logout, sessionLost, acknowledgeSessionLost,
-  }), [client, account, restoring, knowledgeBases, kbId, status, statusError, login, logout, sessionLost, acknowledgeSessionLost]);
+    client, account, restoring, knowledgeBases, kbId, setKbId, status, statusError, login, logout, sessionLost, acknowledgeSessionLost, passwordChanged,
+  }), [client, account, restoring, knowledgeBases, kbId, status, statusError, login, logout, sessionLost, acknowledgeSessionLost, passwordChanged]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
 export function ConnectControl({ onLogin }: { onLogin: () => void }) {
-  const { client, account, knowledgeBases, kbId, setKbId, logout } = useSession();
+  const { client, account, knowledgeBases, kbId, setKbId, logout, passwordChanged } = useSession();
+  const [changing, setChanging] = useState(false);
   if (client) {
+    const forced = account?.mustChangePassword === true;
+    const signOut = () => { logout(); onLogin(); };
     return (
       <Space>
-        <Tag title={account?.username}>{account ? (account.displayName ?? account.username) : "已登录"}</Tag>
+        <Dropdown trigger={["click"]} menu={{ items: [{ key: "password", label: "修改密码" }], onClick: () => setChanging(true) }}>
+          <Button size="small" type="text" className="account-menu" title={account?.username} aria-label="账号菜单">
+            {account ? (account.displayName ?? account.username) : "已登录"}
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 4.5l3 3 3-3" /></svg>
+          </Button>
+        </Dropdown>
         <Select
           size="small"
           className="kb-select"
@@ -155,7 +189,13 @@ export function ConnectControl({ onLogin }: { onLogin: () => void }) {
           options={knowledgeBases.map((k) => ({ value: k.id, label: k.name }))}
           aria-label="选择知识库"
         />
-        <Button size="small" onClick={() => { logout(); onLogin(); }}>退出登录</Button>
+        <Button size="small" onClick={signOut}>退出登录</Button>
+        {(changing || forced) && (
+          <Suspense fallback={null}>
+            <ChangePasswordModal open forced={forced} client={client} username={account?.username ?? ""}
+              onClose={() => setChanging(false)} onChanged={() => { setChanging(false); passwordChanged(); }} onLogout={signOut} />
+          </Suspense>
+        )}
       </Space>
     );
   }

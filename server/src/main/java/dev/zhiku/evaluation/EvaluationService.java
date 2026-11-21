@@ -10,6 +10,7 @@ import dev.zhiku.chat.ChatModel;
 import dev.zhiku.chat.ChatSettings;
 import dev.zhiku.document.DocumentRepository;
 import dev.zhiku.document.DocumentService;
+import dev.zhiku.ingestion.DocumentText;
 import dev.zhiku.ingestion.IngestionSettings;
 import dev.zhiku.ingestion.TextChunker;
 import dev.zhiku.knowledgebase.KnowledgeBaseAccess;
@@ -22,7 +23,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
-import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -225,9 +225,10 @@ public class EvaluationService {
   }
 
   private String normalizedContent(UUID versionId) {
-    var bytes = jdbc.query("SELECT content FROM content_blob WHERE version_id = ?", (rs, i) -> rs.getBytes(1), versionId);
-    if (bytes.isEmpty()) throw ApiException.unprocessable("Evidence version has no content");
-    return TextChunker.normalize(new String(bytes.getFirst(), StandardCharsets.UTF_8).replaceFirst("^﻿", ""));
+    var blobs = jdbc.query("SELECT media_type, content FROM content_blob WHERE version_id = ?",
+        (rs, i) -> DocumentText.extract(rs.getString(1), rs.getBytes(2)), versionId);
+    if (blobs.isEmpty()) throw ApiException.unprocessable("Evidence version has no content");
+    return TextChunker.normalize(blobs.getFirst());
   }
 
   /** 只有候选用例可以补齐或修改样本字段；已批准的用例冻结。 */

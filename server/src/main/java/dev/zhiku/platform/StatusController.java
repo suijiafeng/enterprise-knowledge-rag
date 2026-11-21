@@ -19,12 +19,15 @@ public class StatusController {
   private final IngestionSettings ingestion;
 
   private final boolean demo;
+  private final boolean requireApproval;
   private final String demoPassword;
 
   public StatusController(ObjectProvider<ChatModel> chat, ObjectProvider<EmbeddingProvider> embeddings,
       BusinessSettings business, IngestionSettings ingestion,
       @org.springframework.beans.factory.annotation.Value("${zhiku.demo.accounts:false}") boolean demo,
-      @org.springframework.beans.factory.annotation.Value("${zhiku.demo.password:}") String demoPassword) {
+      @org.springframework.beans.factory.annotation.Value("${zhiku.demo.password:}") String demoPassword,
+      @org.springframework.beans.factory.annotation.Value("${zhiku.document.require-approval:false}") boolean requireApproval) {
+    this.requireApproval = requireApproval;
     this.demo = demo;
     this.demoPassword = demoPassword;
     this.chat = chat;
@@ -47,7 +50,9 @@ public class StatusController {
     body.put("retrieval", "exact-vector");
     body.put("businessTimeZone", business.timeZone().getId());
     body.put("maxUploadBytes", ingestion.maxBytes());
-    body.put("uploadFormats", java.util.List.of(".md", ".markdown", ".txt"));
+    // 发布前是否需要单独「批准」；为 false 时管理端可以上传后一步发布。
+    body.put("requireApproval", requireApproval);
+    body.put("uploadFormats", java.util.List.of(".md", ".markdown", ".txt", ".pdf", ".docx"));
     // 只有 dev 配置写入了演示账号时才公开它们的登录信息，方便本地体验；生产永远为 null。
     body.put("demoLogin", demo ? Map.of("usernames", java.util.List.of("admin", "operator", "employee"), "password", demoPassword) : null);
     return body;

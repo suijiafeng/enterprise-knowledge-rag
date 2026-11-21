@@ -1,7 +1,7 @@
 import { Button, ConfigProvider, Input, type InputRef } from "antd";
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useNotice } from "../../notice";
-import type { LoginFailure } from "../../session";
+import type { LoginResult, SessionLost } from "../../session";
 import { BrandMark } from "./BrandMark";
 import "./login.css";
 
@@ -48,11 +48,17 @@ const LOGIN_THEME = {
  * 入口页面：用户名 + 密码登录。没有“记住我”（登录状态由服务端的 HttpOnly 刷新 cookie 维持，7 天内有效、可随时退出），
  * 没有自助找回密码（由 IT 管理员重置）。结果与限流都用顶部 toast 提示；被限流时按钮按 Retry-After 倒计时。
  */
+export const LOST_MESSAGE: Record<Exclude<SessionLost, false>, string> = {
+  disabled: "账号已被管理员停用，如有疑问请联系 IT 管理员",
+  revoked: "登录已在其他地方退出或被管理员撤销，请重新登录",
+  expired: "登录已过期，请重新登录",
+};
+
 export function LoginPage({ onLogin, onBrowseSamples, demo, sessionLost = false, onSessionLostShown }: {
-  onLogin: (username: string, password: string) => Promise<LoginFailure | undefined>;
+  onLogin: (username: string, password: string) => Promise<LoginResult>;
   onBrowseSamples: () => void;
   demo?: DemoLogin | null | undefined;
-  sessionLost?: boolean;
+  sessionLost?: SessionLost;
   onSessionLostShown?: () => void;
 }) {
   const notice = useNotice();
@@ -76,7 +82,7 @@ export function LoginPage({ onLogin, onBrowseSamples, demo, sessionLost = false,
 
   useEffect(() => {
     if (!sessionLost) return;
-    notice.open({ key: "session-lost", type: "info", content: "登录已失效（已在其他地方退出或被管理员停用），请重新登录", duration: 4 });
+    notice.open({ key: "session-lost", type: sessionLost === "disabled" ? "warning" : "info", content: LOST_MESSAGE[sessionLost], duration: 4 });
     onSessionLostShown?.();
   }, [sessionLost, notice, onSessionLostShown]);
 
@@ -91,8 +97,8 @@ export function LoginPage({ onLogin, onBrowseSamples, demo, sessionLost = false,
     setBusy(true);
     const failure = await onLogin(username, password);
     setBusy(false);
-    if (!failure) {
-      notice.open({ key: "login-result", type: "success", content: `欢迎回来，${username.trim()}`, duration: 2 });
+    if (failure.ok) {
+      notice.open({ key: "login-result", type: "success", content: `欢迎回来，${failure.name}`, duration: 2 });
       return;
     }
     if (failure.retryAfter) {

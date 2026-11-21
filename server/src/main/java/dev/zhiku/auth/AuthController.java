@@ -31,7 +31,9 @@ class AuthController {
 
   record LoginRequest(@NotNull @Size(min = 1, max = 64) String username, @NotNull @Size(min = 1, max = 200) String password) {}
 
-  record Account(UUID id, String username, String displayName, Set<Role> roles) {}
+  record Account(UUID id, String username, String displayName, Set<Role> roles, boolean mustChangePassword) {}
+
+  record PasswordChange(@NotNull @Size(max = 200) String currentPassword, @NotNull @Size(max = 200) String newPassword) {}
 
   record TokenResponse(String accessToken, String tokenType, Instant expiresAt, Account account) {}
 
@@ -58,6 +60,17 @@ class AuthController {
     return respond(sessions.refresh(refreshToken));
   }
 
+  /** 本人改密只接受绑定会话的登录令牌（不接受开发令牌或 widget 令牌）；按账号限流，挡住借会话猜当前密码。 */
+  @PostMapping("/password")
+  ResponseEntity<Void> changePassword(@Valid @RequestBody PasswordChange request) {
+    var jwt = SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken t ? t.getToken() : null;
+    if (jwt == null || !jwt.hasClaim(AccountSessions.SESSION)) throw dev.zhiku.platform.ApiException.forbidden();
+    var account = UUID.fromString(jwt.getSubject());
+    limiter.acquire("password:" + account, limiter.settings().loginAccount()).ifPresent(retry -> { throw new RateLimitedException(retry); });
+    sessions.changePassword(account, UUID.fromString(jwt.getClaimAsString(AccountSessions.SESSION)), request.currentPassword(), request.newPassword());
+    return ResponseEntity.noContent().build();
+  }
+
   @PostMapping("/logout")
   ResponseEntity<Void> logout(@CookieValue(name = COOKIE, required = false) String refreshToken) {
     var bearer = SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken t ? t.getToken() : null;
@@ -67,7 +80,7 @@ class AuthController {
 
   private ResponseEntity<TokenResponse> respond(AccountSessions.Issued issued) {
     var a = issued.account();
-    var body = new TokenResponse(issued.accessToken(), "Bearer", issued.expiresAt(), new Account(a.id(), a.username(), a.displayName(), a.roles()));
+    var body = new TokenResponse(issued.accessToken(), "Bearer", issued.expiresAt(), new Account(a.id(), a.username(), a.displayName(), a.roles(), a.mustChangePassword()));
     var response = ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store");
     if (issued.refreshToken() != null) {
       response.header(HttpHeaders.SET_COOKIE, cookie(issued.refreshToken(), Duration.between(Instant.now(), issued.refreshExpiresAt())).toString());

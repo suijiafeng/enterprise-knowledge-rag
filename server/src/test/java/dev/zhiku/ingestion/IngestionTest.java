@@ -106,6 +106,39 @@ class IngestionTest extends IntegrationTest {
   }
 
   @Test
+  void indexesWordDocumentsWithHeadingPathsAndKeepsTheOriginalFile() throws Exception {
+    var docx = dev.zhiku.support.TestDocuments.docx("# 员工手册（示例）", "## 年假", "满十年不满二十年的员工，每年可休年假 10 天。", "## 请假流程", "申请需提前 3 个工作日提交。");
+    upload("员工手册.docx", docx, operator, Role.KB_OPERATOR).andExpect(status().isAccepted());
+    assertThat(jdbc.queryForObject("SELECT media_type FROM content_blob WHERE version_id = ?", String.class, version))
+        .isEqualTo(DocumentText.DOCX);
+    assertThat(jdbc.queryForObject("SELECT content FROM content_blob WHERE version_id = ?", byte[].class, version)).isEqualTo(docx);
+    assertThat(worker.processNext()).isTrue();
+    assertThat(indexStatus()).isEqualTo("ready");
+    var headings = jdbc.queryForList("SELECT heading FROM chunk WHERE version_id = ? ORDER BY seq", String.class, version);
+    assertThat(headings).contains("年假", "请假流程");
+    assertThat(jdbc.queryForObject("SELECT string_agg(text, ' ') FROM chunk WHERE version_id = ?", String.class, version)).contains("10 天");
+  }
+
+  @Test
+  void indexesTheTextLayerOfAPdf() throws Exception {
+    upload("policy.pdf", dev.zhiku.support.TestDocuments.pdf("Travel policy", "Hotels in tier-one cities: at most 600 per night."), operator, Role.KB_OPERATOR)
+        .andExpect(status().isAccepted());
+    assertThat(worker.processNext()).isTrue();
+    assertThat(indexStatus()).isEqualTo("ready");
+    assertThat(jdbc.queryForObject("SELECT string_agg(text, ' ') FROM chunk WHERE version_id = ?", String.class, version)).contains("600 per night");
+  }
+
+  @Test
+  void rejectsScannedPdfsLegacyWordAndDisguisedFiles() throws Exception {
+    upload("scan.pdf", dev.zhiku.support.TestDocuments.pdf(), operator, Role.KB_OPERATOR).andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("OCR")));
+    upload("old.doc", HANDBOOK).andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString(".docx")));
+    upload("fake.docx", HANDBOOK).andExpect(status().isUnprocessableEntity());
+    upload("fake.pdf", dev.zhiku.support.TestDocuments.docx("x"), operator, Role.KB_OPERATOR).andExpect(status().isUnprocessableEntity());
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM ingestion_job WHERE version_id = ?", Integer.class, version)).isZero();
+  }
+
+  @Test
   void rejectsUnsafeOrUnsupportedFiles() throws Exception {
     upload("empty.md", "").andExpect(status().isUnprocessableEntity());
     upload("blank.txt", " \n\t\n").andExpect(status().isUnprocessableEntity());

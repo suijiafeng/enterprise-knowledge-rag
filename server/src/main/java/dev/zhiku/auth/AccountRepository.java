@@ -18,9 +18,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class AccountRepository {
   public record Account(UUID id, UUID enterpriseId, String username, String passwordHash, Set<Role> roles, boolean disabled,
-      String displayName) {}
+      String displayName, boolean mustChangePassword) {}
 
-  public record AccountSummary(UUID id, String username, String displayName, Set<Role> roles, boolean disabled, int activeSessions) {}
+  public record AccountSummary(UUID id, String username, String displayName, Set<Role> roles, boolean disabled, int activeSessions,
+      boolean mustChangePassword) {}
 
   /** 会话仍有效时的账号状态：角色以数据库为准。 */
   public record ActiveSession(UUID sessionId, UUID accountId, UUID enterpriseId, Set<Role> roles) {}
@@ -52,13 +53,14 @@ public class AccountRepository {
   }
 
   private static final String ACCOUNT = """
-      SELECT a.id, a.enterprise_id, a.username, a.password_hash, a.roles, a.disabled, d.display_name
+      SELECT a.id, a.enterprise_id, a.username, a.password_hash, a.roles, a.disabled, d.display_name, a.must_change_password
       FROM app_account a LEFT JOIN directory_user d ON d.id = a.id AND d.enterprise_id = a.enterprise_id
       """;
 
   private static Account account(ResultSet rs, int row) throws SQLException {
     return new Account(rs.getObject("id", UUID.class), rs.getObject("enterprise_id", UUID.class), rs.getString("username"),
-        rs.getString("password_hash"), roles(rs.getArray("roles")), rs.getBoolean("disabled"), rs.getString("display_name"));
+        rs.getString("password_hash"), roles(rs.getArray("roles")), rs.getBoolean("disabled"), rs.getString("display_name"),
+        rs.getBoolean("must_change_password"));
   }
 
   public Optional<Account> byUsername(String username) {
@@ -71,12 +73,12 @@ public class AccountRepository {
 
   public List<AccountSummary> list(UUID enterpriseId) {
     return jdbc.query("""
-        SELECT a.id, a.username, d.display_name, a.roles, a.disabled,
+        SELECT a.id, a.username, d.display_name, a.roles, a.disabled, a.must_change_password,
           (SELECT count(*) FROM auth_session s WHERE s.account_id = a.id AND s.revoked_at IS NULL AND s.expires_at > now()) AS active
         FROM app_account a LEFT JOIN directory_user d ON d.id = a.id AND d.enterprise_id = a.enterprise_id
         WHERE a.enterprise_id = ? ORDER BY a.username
         """, (rs, i) -> new AccountSummary(rs.getObject("id", UUID.class), rs.getString("username"), rs.getString("display_name"),
-        roles(rs.getArray("roles")), rs.getBoolean("disabled"), rs.getInt("active")), enterpriseId);
+        roles(rs.getArray("roles")), rs.getBoolean("disabled"), rs.getInt("active"), rs.getBoolean("must_change_password")), enterpriseId);
   }
 
   /** 新建或覆盖账号（演示账号、测试）。 */
@@ -86,6 +88,32 @@ public class AccountRepository {
         ON CONFLICT (id) DO UPDATE SET enterprise_id = EXCLUDED.enterprise_id, username = EXCLUDED.username,
           password_hash = EXCLUDED.password_hash, roles = EXCLUDED.roles, disabled = false, updated_at = now()
         """, id, enterpriseId, username, passwordHash, roleList(roles));
+  }
+
+  /** 管理员新建账号：用户名已被占用（含其他企业）时返回 false。 */
+  public boolean create(UUID id, UUID enterpriseId, String username, String passwordHash, Collection<Role> roles, boolean mustChangePassword) {
+    return jdbc.update("""
+        INSERT INTO app_account (id, enterprise_id, username, password_hash, roles, must_change_password)
+        VALUES (?, ?, ?, ?, string_to_array(?, ','), ?) ON CONFLICT (username) DO NOTHING
+        """, id, enterpriseId, username, passwordHash, roleList(roles), mustChangePassword) == 1;
+  }
+
+  /** 账号的显示名放在通讯录（directory_user，与账号同 id），问答记录与授权页面都从这里取名字。 */
+  public void saveDisplayName(UUID id, UUID enterpriseId, String displayName) {
+    jdbc.update("""
+        INSERT INTO directory_user (id, enterprise_id, display_name) VALUES (?, ?, ?)
+        ON CONFLICT (id) DO UPDATE SET display_name = EXCLUDED.display_name, updated_at = now() WHERE directory_user.enterprise_id = EXCLUDED.enterprise_id
+        """, id, enterpriseId, displayName);
+  }
+
+  public void setPassword(UUID id, String passwordHash, boolean mustChangePassword) {
+    jdbc.update("UPDATE app_account SET password_hash = ?, must_change_password = ?, updated_at = now() WHERE id = ?",
+        passwordHash, mustChangePassword, id);
+  }
+
+  /** 撤销该账号除 keep 以外的全部会话（改密后保留当前设备）。 */
+  public int revokeOthers(UUID accountId, UUID keep) {
+    return jdbc.update("UPDATE auth_session SET revoked_at = now() WHERE account_id = ? AND id <> ? AND revoked_at IS NULL", accountId, keep);
   }
 
   public boolean update(UUID id, UUID enterpriseId, Collection<Role> roles, Boolean disabled) {

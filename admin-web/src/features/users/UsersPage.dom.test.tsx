@@ -22,7 +22,13 @@ function clientWith(grants: Grant[]) {
     users: vi.fn(async (q: string) => directory.filter((u) => !q || userLabel(u).includes(q) || u.id === q)),
     grant: vi.fn(async () => {}),
     revoke: vi.fn(async () => {}),
+    accounts: vi.fn(async () => []),
   } as unknown as ApiClient & Record<string, ReturnType<typeof vi.fn>>;
+}
+
+/** 管理员默认落在「账号」页，授权在第二个页签。 */
+async function openGrants() {
+  fireEvent.click(await screen.findByRole("tab", { name: "知识库授权" }));
 }
 
 describe("grants by name", () => {
@@ -32,6 +38,7 @@ describe("grants by name", () => {
       { userId: "00000000-0000-4000-8000-0000000000ff", grantedAt: "2030-01-02T00:00:00Z", displayName: null },
     ]);
     render(<UsersPage client={client} />);
+    await openGrants();
     expect(await screen.findByText("林知远（示例）")).toBeTruthy();
     expect(screen.getByText("信息技术部 · lin@example.com")).toBeTruthy();
     expect(screen.getByText("未同步到目录")).toBeTruthy();
@@ -41,6 +48,7 @@ describe("grants by name", () => {
   it("searches the directory by name and grants the picked user by id", async () => {
     const client = clientWith([{ userId: A1, grantedAt: "2030-01-01T00:00:00Z", displayName: "林知远（示例）" }]);
     render(<UsersPage client={client} />);
+    await openGrants();
     const picker = await screen.findByLabelText("选择用户");
     fireEvent.mouseDown(picker);
     fireEvent.change(picker, { target: { value: "财务" } });
@@ -55,6 +63,7 @@ describe("grants by name", () => {
     const client = clientWith([]);
     const unknown = "00000000-0000-4000-8000-0000000000ee";
     render(<UsersPage client={client} />);
+    await openGrants();
     const picker = await screen.findByLabelText("选择用户");
     fireEvent.mouseDown(picker);
     fireEvent.change(picker, { target: { value: unknown } });

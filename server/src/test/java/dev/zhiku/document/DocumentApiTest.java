@@ -119,11 +119,22 @@ class DocumentApiTest extends IntegrationTest {
   }
 
   @Test
-  void publishRequiresApprovalAndIsAudited() throws Exception {
+  void publishApprovesImplicitlyByDefaultAndIsAudited() throws Exception {
     var doc = createDocument(kb);
     var version = createVersion(doc, "v1", "2026-01-01", null);
     var base = "/api/knowledge-bases/" + kb + "/documents/" + doc + "/versions/" + version;
+    mvc.perform(as(post(base + "/publish"), operator, Role.KB_OPERATOR)).andExpect(status().isNoContent());
+    assertThat(jdbc.queryForObject("SELECT approved_by FROM content_version WHERE id = ?", UUID.class, version)).isEqualTo(operator);
+    assertThat(jdbc.queryForObject("SELECT detail->>'autoApproved' FROM audit_event WHERE target = ? AND action = 'VERSION_PUBLISH'",
+        String.class, "version:" + version)).isEqualTo("true");
     mvc.perform(as(post(base + "/publish"), operator, Role.KB_OPERATOR)).andExpect(status().isConflict());
+    mvc.perform(get("/api/status")).andExpect(jsonPath("$.requireApproval").value(false));
+  }
+
+  @Test
+  void explicitApproveThenPublishStillWorksAndIsAudited() throws Exception {
+    var doc = createDocument(kb);
+    var version = createVersion(doc, "v1", "2026-01-01", null);
     approveAndPublish(doc, version);
     assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE target = ? AND action IN ('VERSION_APPROVE','VERSION_PUBLISH')",
         Integer.class, "version:" + version)).isEqualTo(2);

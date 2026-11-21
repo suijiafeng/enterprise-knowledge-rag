@@ -29,6 +29,8 @@ zhiku:
     # 业务日期（生效 from/until）按此时区解释；存储使用 UTC。
     time-zone: Asia/Shanghai
   document:
+    # 发布前是否必须先由有权限的人「批准」。默认关闭：发布即由发布人批准，上传后一步发布。
+    require-approval: ${ZHIKU_REQUIRE_APPROVAL:false}
     # 文档删除后在后台移除内容、chunk 和向量（读取立即停止）。
     cleanup-enabled: true
     cleanup-poll-interval: PT10S
@@ -118,6 +120,8 @@ zhiku:
     accounts: false
   rate-limit:
     enabled: true
+    # 计数存放：memory（默认，单实例/开发）或 postgres（多实例共享，表 rate_limit_window）。
+    store: ${ZHIKU_RATE_LIMIT_STORE:memory}
     # 每个来源 IP 的登录尝试
     login: {limit: 10, window: PT1M}
     # 每个用户名的登录尝试（分散 IP 猜同一账号）

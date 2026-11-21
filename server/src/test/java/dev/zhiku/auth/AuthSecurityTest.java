@@ -101,7 +101,8 @@ class AuthSecurityTest extends IntegrationTest {
     var body = json.readTree(result.getResponse().getContentAsString());
     assertThat(body.get("tokenType").asText()).isEqualTo("Bearer");
     assertThat(body.get("account").get("id").asText()).isEqualTo(id.toString());
-    assertThat(body.toString()).doesNotContain("password").doesNotContain("refresh");
+    assertThat(body.get("account").get("mustChangePassword").asBoolean()).isFalse();
+    assertThat(body.toString()).doesNotContain("passwordHash").doesNotContain("$2a$").doesNotContain("refresh");
     var cookie = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
     assertThat(cookie).startsWith("zhiku_refresh=").contains("HttpOnly", "SameSite=Strict", "Path=/api/auth", "Secure");
     assertThat(result.getResponse().getHeader(HttpHeaders.CACHE_CONTROL)).contains("no-store");
@@ -187,6 +188,88 @@ class AuthSecurityTest extends IntegrationTest {
     mvc.perform(as(get("/api/me"), again)).andExpect(status().isUnauthorized());
     assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE actor_id = ? AND action LIKE 'ACCOUNT_%'", Integer.class, admin))
         .isEqualTo(3);
+  }
+
+  @Test
+  void refreshTellsADisabledAccountARevokedSessionAndAnExpiredOneApart() throws Exception {
+    var admin = account(enterprise, Role.IT_ADMIN);
+    var adminToken = signIn(admin).access();
+    var expired = signIn(account(enterprise, Role.EMPLOYEE));
+    jdbc.update("UPDATE auth_session SET expires_at = now() - interval '1 minute' WHERE refresh_hash = ?", AccountSessions.hash(expired.refresh()));
+    assertThat(refresh(expired.refresh()).getResponse().getContentAsString()).contains("SESSION_EXPIRED");
+
+    var kicked = account(enterprise, Role.EMPLOYEE);
+    var kickedSession = signIn(kicked);
+    mvc.perform(as(delete("/api/admin/accounts/{id}/sessions", kicked), adminToken)).andExpect(status().isNoContent());
+    assertThat(refresh(kickedSession.refresh()).getResponse().getContentAsString()).contains("SESSION_REVOKED");
+
+    var disabled = account(enterprise, Role.EMPLOYEE);
+    var disabledSession = signIn(disabled);
+    mvc.perform(as(patch("/api/admin/accounts/{id}", disabled), adminToken).contentType("application/json").content("{\"disabled\":true}"))
+        .andExpect(status().isNoContent());
+    var refused = refresh(disabledSession.refresh());
+    assertThat(refused.getResponse().getStatus()).isEqualTo(401);
+    assertThat(refused.getResponse().getContentAsString()).contains("ACCOUNT_DISABLED");
+  }
+
+  MvcResult changePassword(String token, String current, String next) throws Exception {
+    return mvc.perform(as(post("/api/auth/password"), token).contentType("application/json")
+        .content(json.writeValueAsString(java.util.Map.of("currentPassword", current, "newPassword", next)))).andReturn();
+  }
+
+  @Test
+  void adminCreatesAnAccountWithAOneTimePasswordThatTheUserMustChange() throws Exception {
+    var admin = account(enterprise, Role.IT_ADMIN);
+    var adminToken = signIn(admin).access();
+    var username = "new." + UUID.randomUUID().toString().substring(0, 8);
+    var created = mvc.perform(as(post("/api/admin/accounts"), adminToken).contentType("application/json")
+            .content("{\"username\":\"" + username.toUpperCase() + "\",\"displayName\":\"林晓（虚构）\",\"roles\":[\"EMPLOYEE\"]}"))
+        .andExpect(status().isCreated()).andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+        .andExpect(jsonPath("$.username").value(username)).andReturn();
+    var temporary = json.readTree(created.getResponse().getContentAsString()).get("temporaryPassword").asText();
+    assertThat(temporary).hasSize(16);
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE detail::text LIKE ?", Integer.class, "%" + temporary + "%"))
+        .as("the one-time password never reaches the audit log").isZero();
+    mvc.perform(as(post("/api/admin/accounts"), adminToken).contentType("application/json")
+        .content("{\"username\":\"" + username + "\",\"roles\":[\"EMPLOYEE\"]}")).andExpect(status().isConflict());
+    mvc.perform(as(post("/api/admin/accounts"), adminToken).contentType("application/json")
+        .content("{\"username\":\"a b\",\"roles\":[\"EMPLOYEE\"]}")).andExpect(status().isUnprocessableEntity());
+    mvc.perform(as(post("/api/admin/accounts"), adminToken).contentType("application/json")
+        .content("{\"username\":\"no-roles\",\"roles\":[]}")).andExpect(status().isUnprocessableEntity());
+
+    var first = login(username, temporary, "10.5.0.1");
+    var body = json.readTree(first.getResponse().getContentAsString());
+    assertThat(body.get("account").get("displayName").asText()).isEqualTo("林晓（虚构）");
+    assertThat(body.get("account").get("mustChangePassword").asBoolean()).isTrue();
+    var token = body.get("accessToken").asText();
+    var other = json.readTree(login(username, temporary, "10.5.0.2").getResponse().getContentAsString()).get("accessToken").asText();
+
+    assertThat(changePassword(token, "wrong-current", "brand-new-Secret-42").getResponse().getContentAsString()).contains("INVALID_CURRENT_PASSWORD");
+    assertThat(changePassword(token, temporary, "short").getResponse().getStatus()).isEqualTo(422);
+    assertThat(changePassword(token, temporary, username).getResponse().getStatus()).isEqualTo(422);
+    assertThat(changePassword(token, temporary, "brand-new-Secret-42").getResponse().getStatus()).isEqualTo(204);
+    mvc.perform(as(get("/api/me"), token)).andExpect(status().isOk());
+    mvc.perform(as(get("/api/me"), other)).andExpect(status().isUnauthorized());
+    assertThat(login(username, temporary, "10.5.0.3").getResponse().getStatus()).isEqualTo(401);
+    var after = json.readTree(login(username, "brand-new-Secret-42", "10.5.0.4").getResponse().getContentAsString());
+    assertThat(after.get("account").get("mustChangePassword").asBoolean()).isFalse();
+  }
+
+  @Test
+  void adminResetsAPasswordWhichSignsTheUserOutEverywhere() throws Exception {
+    var admin = account(enterprise, Role.IT_ADMIN);
+    var target = account(enterprise, Role.EMPLOYEE);
+    var adminToken = signIn(admin).access();
+    var targetSession = signIn(target);
+    var reset = mvc.perform(as(post("/api/admin/accounts/{id}/password", target), adminToken)).andExpect(status().isOk()).andReturn();
+    var temporary = json.readTree(reset.getResponse().getContentAsString()).get("temporaryPassword").asText();
+    mvc.perform(as(get("/api/me"), targetSession.access())).andExpect(status().isUnauthorized());
+    assertThat(login(username(target), PASSWORD, "10.6.0.1").getResponse().getStatus()).isEqualTo(401);
+    var again = json.readTree(login(username(target), temporary, "10.6.0.2").getResponse().getContentAsString());
+    assertThat(again.get("account").get("mustChangePassword").asBoolean()).isTrue();
+    mvc.perform(as(post("/api/admin/accounts/{id}/password", admin), adminToken)).andExpect(status().isUnprocessableEntity());
+    mvc.perform(as(post("/api/admin/accounts"), again.get("accessToken").asText()).contentType("application/json")
+        .content("{\"username\":\"sneaky\",\"roles\":[\"IT_ADMIN\"]}")).andExpect(status().isForbidden());
   }
 
   @Test

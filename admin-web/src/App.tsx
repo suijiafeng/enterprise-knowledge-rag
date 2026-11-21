@@ -1,8 +1,8 @@
 import { App as AntApp, Breadcrumb, Button, ConfigProvider, Layout, Menu, Spin } from "antd";
-import { Suspense, useState } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 import { ConnectControl, SessionProvider, useSession } from "./session";
 import { demoLoginAllowed, LoginPage } from "./features/login/LoginPage";
-import { NAV, NEEDS_KB, type NavKey } from "./nav";
+import { NAV, NEEDS_KB, visibleNav, type NavKey } from "./nav";
 import { LAZY_ROUTES } from "./routes";
 import { NoKnowledgeBase } from "./NoKnowledgeBase";
 
@@ -40,27 +40,31 @@ export function App({ initialMode = "login" }: { initialMode?: Mode }) {
         Menu: { itemBorderRadius: 6, itemSelectedBg: "#2f5bd3", itemSelectedColor: "#ffffff", itemHoverBg: "#283049", itemColor: "#c5cad6", darkItemBg: "#1f2638", darkItemSelectedBg: "#2f5bd3", darkItemSelectedColor: "#ffffff", darkItemHoverBg: "#283049", darkItemColor: "#c5cad6", activeBarBorderWidth: 0 },
       },
     }}>
-      <AntApp message={{ top: 64, maxCount: 3, duration: 3 }}>
-        <SessionProvider>
-          <Entry initialMode={initialMode} />
-        </SessionProvider>
-      </AntApp>
+      <SessionProvider>
+        <Entry initialMode={initialMode} />
+      </SessionProvider>
     </ConfigProvider>
   );
 }
+
+/** toast 的顶部偏移：控制台在 56px 顶栏之下；登录页没有顶栏，贴近顶部，品牌标志从 64px 以下开始，不会被盖住。 */
+export const TOAST_TOP = { console: 64, login: 12 } as const;
 
 /** 先登录；会话连接后或用户选择示例数据时才显示控制台。 */
 function Entry({ initialMode }: { initialMode: Mode }) {
   const session = useSession();
   const [mode, setMode] = useState<Mode>(initialMode);
-  if (!session.client && session.restoring && mode === "login") return <div className="route-loading login-restoring"><Spin /></div>;
-  if (!session.client && mode === "login") {
-    return (
+  const onLoginPage = !session.client && mode === "login";
+  let view: ReactNode;
+  if (onLoginPage && session.restoring) view = <div className="route-loading login-restoring"><Spin /></div>;
+  else if (onLoginPage) {
+    view = (
       <LoginPage onLogin={session.login} demo={demoLoginAllowed() ? session.status?.demoLogin : null} onBrowseSamples={() => setMode("sample")}
         sessionLost={session.sessionLost} onSessionLostShown={session.acknowledgeSessionLost} />
     );
-  }
-  return <Shell onLogin={() => setMode("login")} />;
+  } else view = <Shell onLogin={() => setMode("login")} />;
+  // 同一个 App 包住登录页和控制台：登录成功的欢迎提示在切到控制台后继续显示（随之下移到顶栏下方）。
+  return <AntApp message={{ top: onLoginPage ? TOAST_TOP.login : TOAST_TOP.console, maxCount: 3, duration: 3 }}>{view}</AntApp>;
 }
 
 /** 开发环境提示：一行小字，可关闭；不再是整块黄色横幅。 */
@@ -81,7 +85,10 @@ export function DevBanner({ connected }: { connected: boolean }) {
 /** 管理端外壳：侧栏通高，内容区单独滚动；页面按路由懒加载。 */
 function Shell({ onLogin }: { onLogin: () => void }) {
   const session = useSession();
-  const [active, setActive] = useState<NavKey>("overview");
+  const [chosen, setActive] = useState<NavKey>("overview");
+  const nav = visibleNav(session.client ? session.account?.roles ?? [] : undefined);
+  // 换了账号或角色被降低后，当前页面不在菜单里时回到总览。
+  const active: NavKey = nav.some((n) => n.key === chosen) ? chosen : "overview";
   const kbName = session.knowledgeBases.find((k) => k.id === session.kbId)?.name;
   const current = NAV.find((n) => n.key === active) ?? NAV[0];
   const Page = LAZY_ROUTES[active];
@@ -103,7 +110,7 @@ function Shell({ onLogin }: { onLogin: () => void }) {
           className="shell-menu"
           selectedKeys={[active]}
           onClick={({ key }) => setActive(key as NavKey)}
-          items={NAV.map((n) => ({ key: n.key, label: n.label }))}
+          items={nav.map((n) => ({ key: n.key, label: n.label }))}
         />
         <div className="shell-user">
           <div>

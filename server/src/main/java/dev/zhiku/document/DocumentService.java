@@ -27,7 +27,12 @@ public class DocumentService {
   private final BusinessSettings business;
   private final AuditLog audit;
 
-  public DocumentService(KnowledgeBaseAccess access, DocumentRepository repository, BusinessSettings business, AuditLog audit) {
+  /** 是否要求先「批准」再「发布」。默认关闭：发布即视为由发布人批准，上传后可一步发布。 */
+  private final boolean requireApproval;
+
+  public DocumentService(KnowledgeBaseAccess access, DocumentRepository repository, BusinessSettings business, AuditLog audit,
+      @org.springframework.beans.factory.annotation.Value("${zhiku.document.require-approval:false}") boolean requireApproval) {
+    this.requireApproval = requireApproval;
     this.access = access;
     this.repository = repository;
     this.business = business;
@@ -71,9 +76,18 @@ public class DocumentService {
     transition(kbId, documentId, versionId, "VERSION_APPROVE", (scope) -> repository.approve(versionId, scope.userId()));
   }
 
+  public boolean requireApproval() {
+    return requireApproval;
+  }
+
+  /** 不要求审批时，发布前由发布人一并批准（同一事务、同一审计记录里注明 autoApproved）。 */
   @Transactional
   public void publish(UUID kbId, UUID documentId, UUID versionId) {
-    transition(kbId, documentId, versionId, "VERSION_PUBLISH", (scope) -> repository.publish(versionId, scope.userId()));
+    var autoApproved = new boolean[1];
+    transition(kbId, documentId, versionId, "VERSION_PUBLISH", (scope) -> {
+      if (!requireApproval) autoApproved[0] = repository.approve(versionId, scope.userId()) == 1;
+      return repository.publish(versionId, scope.userId());
+    }, () -> autoApproved[0] ? Map.of("autoApproved", true) : Map.of());
   }
 
   @Transactional
@@ -130,10 +144,18 @@ public class DocumentService {
   }
 
   private void transition(UUID kbId, UUID documentId, UUID versionId, String action, java.util.function.ToIntFunction<AccessScope> change) {
+    transition(kbId, documentId, versionId, action, change, Map::of);
+  }
+
+  private void transition(UUID kbId, UUID documentId, UUID versionId, String action, java.util.function.ToIntFunction<AccessScope> change,
+      java.util.function.Supplier<Map<String, Object>> detail) {
     var scope = access.require(kbId, MANAGE_DOCUMENTS);
     if (repository.findVersion(kbId, documentId, versionId).isEmpty()) throw ApiException.forbidden();
     if (!repository.lockLiveDocument(documentId)) throw ApiException.forbidden();
-    if (change.applyAsInt(scope) != 1) throw ApiException.conflict("Version state does not allow this transition");
-    audit.record(scope, action, "version:" + versionId, "OK", Map.of());
+    if (change.applyAsInt(scope) != 1) {
+      throw ApiException.conflict(requireApproval && "VERSION_PUBLISH".equals(action)
+          ? "Version must be approved before publishing" : "Version state does not allow this transition");
+    }
+    audit.record(scope, action, "version:" + versionId, "OK", detail.get());
   }
 }
