@@ -1,5 +1,5 @@
-import { Button, Select, Space, Tag } from "antd";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button, Dropdown, Select, Space, Tag } from "antd";
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError, createAuthApi, createClient, type ApiClient, type AuthAccount, type Fetch, type KnowledgeBase, type Status, type TokenResponse } from "./api/client";
 
 export interface Session {
@@ -47,6 +47,9 @@ const disconnected: Session = {
   status: undefined, statusError: undefined, login: async () => ({ message: "未初始化" }), logout: () => {},
   sessionLost: false, acknowledgeSessionLost: () => {}, passwordChanged: () => {},
 };
+
+/** 改密弹窗（含 antd Form）只在打开时加载，不进首屏包。 */
+const ChangePasswordModal = lazy(() => import("./features/account/ChangePasswordModal").then((m) => ({ default: m.ChangePasswordModal })));
 
 const SessionContext = createContext<Session>(disconnected);
 export const useSession = () => useContext(SessionContext);
@@ -160,11 +163,19 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
 }
 
 export function ConnectControl({ onLogin }: { onLogin: () => void }) {
-  const { client, account, knowledgeBases, kbId, setKbId, logout } = useSession();
+  const { client, account, knowledgeBases, kbId, setKbId, logout, passwordChanged } = useSession();
+  const [changing, setChanging] = useState(false);
   if (client) {
+    const forced = account?.mustChangePassword === true;
+    const signOut = () => { logout(); onLogin(); };
     return (
       <Space>
-        <Tag title={account?.username}>{account ? (account.displayName ?? account.username) : "已登录"}</Tag>
+        <Dropdown trigger={["click"]} menu={{ items: [{ key: "password", label: "修改密码" }], onClick: () => setChanging(true) }}>
+          <Button size="small" type="text" className="account-menu" title={account?.username} aria-label="账号菜单">
+            {account ? (account.displayName ?? account.username) : "已登录"}
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 4.5l3 3 3-3" /></svg>
+          </Button>
+        </Dropdown>
         <Select
           size="small"
           className="kb-select"
@@ -174,7 +185,13 @@ export function ConnectControl({ onLogin }: { onLogin: () => void }) {
           options={knowledgeBases.map((k) => ({ value: k.id, label: k.name }))}
           aria-label="选择知识库"
         />
-        <Button size="small" onClick={() => { logout(); onLogin(); }}>退出登录</Button>
+        <Button size="small" onClick={signOut}>退出登录</Button>
+        {(changing || forced) && (
+          <Suspense fallback={null}>
+            <ChangePasswordModal open forced={forced} client={client} username={account?.username ?? ""}
+              onClose={() => setChanging(false)} onChanged={() => { setChanging(false); passwordChanged(); }} onLogout={signOut} />
+          </Suspense>
+        )}
       </Space>
     );
   }
