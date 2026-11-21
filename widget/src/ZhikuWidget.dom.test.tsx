@@ -52,7 +52,8 @@ describe("widget feedback", () => {
     fireEvent.click(await screen.findByText("踩"));
     fireEvent.click(screen.getByText("答错了"));
 
-    expect(await screen.findByText("反馈提交失败")).toBeTruthy();
+    const toast = await screen.findByText("反馈提交失败，请稍后再试");
+    expect(toast.className).toContain("zhiku-toast");
     fireEvent.click(screen.getByText("答错了"));
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/feedback"))).toHaveLength(2));
   });
@@ -139,5 +140,23 @@ describe("widget refusal", () => {
     fireEvent.click(screen.getByText("发送"));
     expect(await screen.findByText("资料中没有足够依据回答这个问题。")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("confirms a vote with a short toast that goes away, and Esc closes the panel", async () => {
+    const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const answer = [sse("draft", { text: "中性回答", seq: 1 }), sse("validated", { citations: [], validation: "metadata-only" }),
+      sse("done", { status: "complete", messageId: "m2" })].join("");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/feedback")
+      ? new Response(null, { status: 204 })
+      : new Response(answer, { status: 200, headers: { "Content-Type": "text/event-stream" } })));
+    render(<ZhikuWidget endpoint="/api/chat" knowledgeBaseId="kb-a" defaultOpen />);
+    fireEvent.change(screen.getByLabelText("问题"), { target: { value: "虚构问题" } });
+    fireEvent.click(screen.getByText("发送"));
+    fireEvent.click(await screen.findByText("赞"));
+    expect(await screen.findByText("已收到反馈，谢谢")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("已收到反馈，谢谢")).toBeNull(), { timeout: 4000 });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByLabelText("打开知库问答")).toBeTruthy();
   });
 });
