@@ -67,8 +67,9 @@ public class ChunkEditService {
       }
       chunks.add(new Chunk(i, draft.startOffset(), draft.endOffset(), null, text));
     }
-    var ids = repository.replaceChunks(versionId, chunks);
-    var vectors = provider.embed(chunks.stream().map(Chunk::text).toList());
+    var title = repository.documentTitle(versionId);
+    var ids = repository.replaceChunks(versionId, chunks, title);
+    var vectors = provider.embed(chunks.stream().map(c -> ChunkContext.embedText(title, c.path(), c.text())).toList());
     int dimension = EmbeddingVectors.validate(vectors, chunks.size());
     repository.insertEmbeddings(ids, vectors, provider.model(), dimension);
     audit.record(scope, "CHUNK_EDIT", "version:" + versionId, "OK", Map.of("chunks", chunks.size()));

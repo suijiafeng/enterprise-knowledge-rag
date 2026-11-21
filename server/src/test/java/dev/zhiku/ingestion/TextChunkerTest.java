@@ -42,7 +42,9 @@ class TextChunkerTest {
     assertThat(chunks.size()).isGreaterThan(3);
     for (int i = 1; i < chunks.size(); i++) {
       assertThat(chunks.get(i).seq()).isEqualTo(i);
-      assertThat(chunks.get(i).start()).isLessThan(chunks.get(i - 1).end() + 1);
+      // 同一小节内相邻 chunk 重叠或相接；跨小节时两者之间只能是空白。
+      var gap = normalized(chunks.get(i - 1).end(), chunks.get(i).start());
+      assertThat(gap).isBlank();
       assertThat(chunks.get(i).start()).isGreaterThan(chunks.get(i - 1).start());
     }
   }
@@ -53,6 +55,20 @@ class TextChunkerTest {
     assertThat(chunks.getFirst().heading()).isEqualTo("第一章 总则");
     assertThat(chunks.getLast().heading()).isEqualTo("1.2 考勤");
     assertThat(new TextChunker(120, 20, 1000).chunk(doc(), false).getFirst().heading()).isNull();
+  }
+
+  static String normalized(int from, int to) {
+    var text = TextChunker.normalize(doc());
+    return from >= to ? "" : text.substring(from, to);
+  }
+
+  @Test
+  void markdownSectionsAreNeverMergedIntoOneChunkAndCarryTheFullPath() {
+    var text = "# 年假办法\n\n## 天数\n\n满十年十五天。\n\n## 申请\n\n提前三个工作日。";
+    var chunks = new TextChunker(800, 100, 100).chunk(text, true);
+    assertThat(chunks).extracting(TextChunker.Chunk::text).containsExactly("# 年假办法\n\n## 天数\n\n满十年十五天。", "## 申请\n\n提前三个工作日。");
+    assertThat(chunks).extracting(TextChunker.Chunk::path).containsExactly("年假办法 › 天数", "年假办法 › 申请");
+    assertThat(chunks).extracting(TextChunker.Chunk::heading).containsExactly("天数", "申请");
   }
 
   @Test

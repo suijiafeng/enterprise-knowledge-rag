@@ -27,6 +27,8 @@ final class EvalGeneration {
       var candidate = context.get(i);
       var body = candidate.text() == null ? "" : candidate.text();
       if (body.length() > settings.maxChunkChars()) body = body.substring(0, settings.maxChunkChars());
+      // 与问答同一套资料处理：疑似指令先屏蔽。
+      body = dev.zhiku.chat.InjectionGuard.sanitize(body).text();
       passages.append('[').append(i + 1).append("] ").append(candidate.title()).append("（").append(candidate.versionLabel())
           .append("）\n<<<\n").append(body.replace("<<<", "‹‹‹").replace(">>>", "›››")).append("\n>>>\n");
     }

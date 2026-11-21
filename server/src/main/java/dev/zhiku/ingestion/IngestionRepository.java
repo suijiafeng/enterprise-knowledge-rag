@@ -134,11 +134,17 @@ public class IngestionRepository {
             rs.getString("text")), versionId);
   }
 
-  /** 替换该版本的全部 chunk，并按序号顺序返回其 id。 */
-  public List<UUID> replaceChunks(UUID versionId, List<Chunk> chunks) {
+  /** 版本所属文档的标题；用于 chunk 上下文。 */
+  public String documentTitle(UUID versionId) {
+    return jdbc.query("SELECT d.title FROM content_version v JOIN document d ON d.id = v.document_id WHERE v.id = ?",
+        (rs, i) -> rs.getString(1), versionId).stream().findFirst().orElse("");
+  }
+
+  /** 替换该版本的全部 chunk，并按序号顺序返回其 id。上下文 = 文档标题 › 标题路径，参与词法索引。 */
+  public List<UUID> replaceChunks(UUID versionId, List<Chunk> chunks, String title) {
     jdbc.update("DELETE FROM chunk WHERE version_id = ?", versionId);
     var ids = chunks.stream().map(c -> UUID.randomUUID()).toList();
-    jdbc.batchUpdate("INSERT INTO chunk (id, version_id, seq, start_offset, end_offset, heading, text) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    jdbc.batchUpdate("INSERT INTO chunk (id, version_id, seq, start_offset, end_offset, heading, text, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         chunks, 500, (ps, c) -> {
           ps.setObject(1, ids.get(c.seq()));
           ps.setObject(2, versionId);
@@ -147,6 +153,7 @@ public class IngestionRepository {
           ps.setInt(5, c.end());
           ps.setString(6, c.heading());
           ps.setString(7, c.text());
+          ps.setString(8, ChunkContext.of(title, c.path()));
         });
     return ids;
   }

@@ -112,7 +112,8 @@ class RetrievalTest extends IntegrationTest {
         .andExpect(jsonPath("$.stages[1].status").value("success"))
         .andExpect(jsonPath("$.stages[2].status").value("skipped"))
         .andExpect(jsonPath("$.stages[3].status").value("skipped"))
-        .andExpect(jsonPath("$.stages[4].status").value("skipped"))
+        .andExpect(jsonPath("$.stages[4].key").value("relevance")).andExpect(jsonPath("$.stages[4].status").value("success"))
+        .andExpect(jsonPath("$.stages[5].key").value("rerank")).andExpect(jsonPath("$.stages[5].status").value("skipped"))
         .andExpect(jsonPath("$.embeddingModel").value(embeddings.model()))
         .andExpect(jsonPath("$.candidates[0].rank").value(1));
     assertThat(versionsOf(result).getFirst()).isEqualTo(leave.toString());
@@ -135,7 +136,7 @@ class RetrievalTest extends IntegrationTest {
         .andExpect(jsonPath("$.origin").value("debug"))
         .andExpect(jsonPath("$.k").value(3))
         .andExpect(jsonPath("$.embeddingModel").value(embeddings.model()))
-        .andExpect(jsonPath("$.stages.length()").value(5))
+        .andExpect(jsonPath("$.stages.length()").value(6))
         .andExpect(jsonPath("$.stages[1].key").value("vector"))
         .andExpect(jsonPath("$.stages[1].status").value("success"))
         .andExpect(jsonPath("$.stages[1].elapsedMs").isNumber())
