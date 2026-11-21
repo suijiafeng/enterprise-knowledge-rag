@@ -8,6 +8,8 @@ import { NoKnowledgeBase } from "./NoKnowledgeBase";
 
 export type { NavKey, PageContext } from "./nav";
 
+const ROLE_LABEL: Record<string, string> = { IT_ADMIN: "IT 管理员", KB_OPERATOR: "知识库运营", EMPLOYEE: "员工" };
+
 type Mode = "login" | "sample";
 
 export function App({ initialMode = "login" }: { initialMode?: Mode }) {
@@ -51,8 +53,9 @@ export function App({ initialMode = "login" }: { initialMode?: Mode }) {
 function Entry({ initialMode }: { initialMode: Mode }) {
   const session = useSession();
   const [mode, setMode] = useState<Mode>(initialMode);
+  if (!session.client && session.restoring && mode === "login") return <div className="route-loading login-restoring"><Spin /></div>;
   if (!session.client && mode === "login") {
-    return <LoginPage onLogin={session.connect} onBrowseSamples={() => setMode("sample")} />;
+    return <LoginPage onLogin={session.login} demo={session.status?.demoLogin} onBrowseSamples={() => setMode("sample")} />;
   }
   return <Shell onLogin={() => setMode("login")} />;
 }
@@ -101,8 +104,8 @@ function Shell({ onLogin }: { onLogin: () => void }) {
         />
         <div className="shell-user">
           <div>
-            <div className="brand-name">{session.client ? "开发令牌" : "未连接"}</div>
-            <div className="brand-sub">{session.client ? "本地 JWT，生产需 IdP" : "示例数据"}</div>
+            <div className="brand-name">{session.account ? (session.account.displayName ?? session.account.username) : "未登录"}</div>
+            <div className="brand-sub">{session.account ? `${session.account.username} · ${session.account.roles.map((r) => ROLE_LABEL[r] ?? r).join(" / ")}` : "示例数据"}</div>
           </div>
         </div>
       </Layout.Sider>

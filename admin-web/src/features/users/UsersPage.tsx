@@ -46,7 +46,7 @@ function Notes() {
     <Card size="small" className="debug-card" title="说明">
       <ul className="proposal-list">
         <li>用户姓名、邮箱、部门来自身份提供方同步到本地的目录（开发环境由种子数据填充）；邀请、停用和最后登录仍由身份提供方负责。目录里找不到的用户可以粘贴用户 ID 授权。</li>
-        <li>角色来自登录令牌，名称为 PRD 建议映射，待业务确认（D02）。"需显式授权"的操作目前一律拒绝。</li>
+        <li>角色在登录账号上配置、每次请求从服务端读取（降权立即生效），名称为 PRD 建议映射，待业务确认（D02）。"需显式授权"的操作目前一律拒绝。</li>
         <li>授权与撤销在下一次请求立即生效，并写入审计日志；撤权后历史回答会按来源依赖隐藏。</li>
       </ul>
     </Card>
@@ -255,10 +255,10 @@ export function UsersPage({ client }: { client: ApiClient | undefined }) {
       <div className="page-head">
         <div>
           <Typography.Title level={3} className="page-title">用户与权限</Typography.Title>
-          <Typography.Text type="secondary" className="page-sub">知识库级授权 · 角色来自登录令牌 · 用户目录由身份提供方管理</Typography.Text>
+          <Typography.Text type="secondary" className="page-sub">知识库级授权 · 角色以服务端账号为准 · 用户目录由身份提供方管理</Typography.Text>
         </div>
       </div>
-      {!client && <Alert type="info" showIcon className="scaffold-alert" title="连接本地服务后可管理授权" description="需要带 IT_ADMIN 角色的开发令牌。用户资料来自身份提供方，本页不展示虚构用户。" />}
+      {!client && <Alert type="info" showIcon className="scaffold-alert" title="登录后可管理授权" description="需要 IT 管理员账号。用户资料来自身份提供方，本页不展示虚构用户。" />}
       {error && <Alert type="error" showIcon className="scaffold-alert" title={`读取失败：${error}`} />}
       {client && me && !admin && <Alert type="warning" showIcon className="scaffold-alert" title="需要 IT 管理员角色才能管理授权" />}
       <Row gutter={[16, 16]}>

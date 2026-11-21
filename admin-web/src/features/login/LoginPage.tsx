@@ -8,23 +8,34 @@ const FACTS = [
 ];
 
 /**
- * 入口页面。只提供真实存在的登录方式：目前是本地签发的开发 token，之后是企业 SSO。
- * 没有密码表单，没有“记住我”（token 只保存在页面内存中），没有找回密码。
+ * 入口页面：用户名 + 密码登录。没有“记住我”（登录状态由服务端的 HttpOnly 刷新 cookie 维持，7 天内有效、可随时退出），
+ * 没有自助找回密码（由 IT 管理员重置）。演示账号只在服务端开启 dev 配置时显示。
  */
-export function LoginPage({ onLogin, onBrowseSamples }: {
-  onLogin: (token: string) => Promise<string | undefined>;
+export function LoginPage({ onLogin, onBrowseSamples, demo }: {
+  onLogin: (username: string, password: string) => Promise<string | undefined>;
   onBrowseSamples: () => void;
+  demo?: { usernames: string[]; password: string } | null | undefined;
 }) {
-  const [token, setToken] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const ready = Boolean(username.trim() && password);
 
   const login = async () => {
+    if (!ready || busy) return;
     setBusy(true);
-    const failure = await onLogin(token);
+    const failure = await onLogin(username, password);
     setBusy(false);
     setError(failure);
-    if (!failure) setToken("");
+    if (!failure) setPassword("");
+  };
+
+  const fill = (name: string) => {
+    if (!demo) return;
+    setUsername(name);
+    setPassword(demo.password);
+    setError(undefined);
   };
 
   return (
@@ -51,19 +62,26 @@ export function LoginPage({ onLogin, onBrowseSamples }: {
         <div className="brand-sub">开发环境 · 尚未接入生产服务</div>
       </aside>
       <main className="login-main">
-        <section className="login-card" aria-label="登录">
+        <form className="login-card" aria-label="登录" onSubmit={(e) => { e.preventDefault(); void login(); }}>
           <Typography.Title level={3} className="page-title">登录管理控制台</Typography.Title>
-          <Typography.Text type="secondary">身份来自登录令牌；用户与角色由身份提供方管理。</Typography.Text>
-          <Typography.Text type="secondary">企业身份登录尚未接入。本地开发使用下方开发令牌。</Typography.Text>
-          <Divider plain>本地开发</Divider>
-          <label className="login-label" htmlFor="dev-token">开发令牌</label>
-          <Input.Password id="dev-token" aria-label="开发令牌" value={token} onChange={(e) => setToken(e.target.value)} placeholder="node scripts/dev-token.mjs 签发"
-            autoComplete="off" onPressEnter={() => token.trim() && void login()} />
-          {error && <Typography.Text type="danger">{error}</Typography.Text>}
-          <Button type="primary" block size="large" loading={busy} disabled={!token.trim()} onClick={() => void login()}>登录</Button>
-          <Typography.Text type="secondary" className="page-sub">令牌只保存在当前页面内存中，刷新或断开即失效。</Typography.Text>
+          <Typography.Text type="secondary">使用 IT 管理员分配的账号登录；角色与知识库授权以服务端为准。</Typography.Text>
+          <label className="login-label" htmlFor="login-username">用户名</label>
+          <Input id="login-username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" maxLength={64} autoFocus />
+          <label className="login-label" htmlFor="login-password">密码</label>
+          <Input.Password id="login-password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" maxLength={200} />
+          {error && <Typography.Text type="danger" role="alert">{error}</Typography.Text>}
+          <Button type="primary" htmlType="submit" block size="large" loading={busy} disabled={!ready}>登录</Button>
+          {demo && (
+            <>
+              <Divider plain>演示账号（仅本地开发）</Divider>
+              <div className="login-demo">
+                {demo.usernames.map((name) => <Button key={name} size="small" onClick={() => fill(name)}>{name}</Button>)}
+              </div>
+              <Typography.Text type="secondary" className="page-sub">点选即可填入；密码为 <span className="mono">{demo.password}</span>。</Typography.Text>
+            </>
+          )}
           <Button type="link" onClick={onBrowseSamples}>以示例数据浏览</Button>
-        </section>
+        </form>
       </main>
     </div>
   );
