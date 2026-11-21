@@ -35,7 +35,8 @@ paths:
                   retrieval: {type: string}
                   businessTimeZone: {type: string}
                   maxUploadBytes: {type: integer}
-                  uploadFormats: {type: array, items: {type: string}}
+                  uploadFormats: {type: array, items: {type: string}, description: '.md .markdown .txt .pdf .docx'}
+                  requireApproval: {type: boolean, description: 'true when publish needs a separate approve step (zhiku.document.require-approval)'}
                   demoLogin:
                     description: Only when the dev profile seeded demo accounts; always null in production.
                     type: [object, 'null']
@@ -89,8 +90,9 @@ paths:
       description: >-
         Uses the zhiku_refresh cookie; rotates it (new Set-Cookie) and returns a new access token with the account's current
         roles. Replaying the previous refresh token within 30 s (concurrent tabs) returns an access token without a new
-        cookie; replaying it later revokes the whole session. 401 SESSION_EXPIRED when the session is revoked, expired or the
-        account is disabled.
+        cookie; replaying it later revokes the whole session (SESSION_REVOKED). 401 codes tell the holder of the cookie why:
+        ACCOUNT_DISABLED (disabled by an administrator), SESSION_REVOKED (signed out elsewhere, kicked out or refresh-token
+        replay), SESSION_EXPIRED (expired or unknown).
       responses:
         '200': {$ref: '#/components/responses/Token'}
         '401': {$ref: '#/components/responses/Error'}
@@ -104,13 +106,99 @@ paths:
         widget tokens of that session stop working immediately. Always 204.
       responses:
         '204': {description: Logged out}
+  /api/auth/password:
+    post:
+      operationId: changeOwnPassword
+      description: >-
+        Signed-in account (session-bound access token only; dev and widget tokens get 403). Verifies the current password;
+        the new one must be 10-200 characters, not the username and not trivially repetitive. Clears mustChangePassword,
+        signs out every other session of the account and keeps the current one. Rate limited per account. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: {type: string, maxLength: 200}
+                newPassword: {type: string, maxLength: 200}
+      responses:
+        '204': {description: Changed}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: 'INVALID_CURRENT_PASSWORD, or the new password breaks the rules', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /api/admin/accounts:
     get:
       operationId: listAccounts
       description: IT_ADMIN only. Login accounts of the caller's enterprise (no password hashes) with active session counts.
       responses:
-        '200': {description: Accounts}
+        '200':
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: {type: string, format: uuid}
+                    username: {type: string}
+                    displayName: {type: [string, 'null']}
+                    roles: {type: array, items: {type: string, enum: [IT_ADMIN, KB_OPERATOR, EMPLOYEE]}}
+                    disabled: {type: boolean}
+                    activeSessions: {type: integer}
+                    mustChangePassword: {type: boolean}
         '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createAccount
+      description: >-
+        IT_ADMIN only. Creates an account in the caller's enterprise with a one-time temporary password, returned once in
+        this response (Cache-Control: no-store; never logged or audited). The user must change it after signing in
+        (mustChangePassword). displayName (default: the username) is also written to the user directory. 409 when the
+        username is taken.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, roles]
+              properties:
+                username: {type: string, pattern: '^[a-z0-9][a-z0-9._-]{2,63}$', description: Lower-cased by the server}
+                displayName: {type: string, maxLength: 100}
+                roles: {type: array, minItems: 1, items: {type: string, enum: [IT_ADMIN, KB_OPERATOR, EMPLOYEE]}}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, username, temporaryPassword]
+                properties:
+                  id: {type: string, format: uuid}
+                  username: {type: string}
+                  temporaryPassword: {type: string}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/admin/accounts/{accountId}/password:
+    post:
+      operationId: resetAccountPassword
+      description: >-
+        IT_ADMIN of the same enterprise; not the caller's own account (422, use /api/auth/password). Replaces the password
+        with a one-time temporary password returned once, sets mustChangePassword and signs the account out everywhere.
+      parameters: [{name: accountId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200':
+          description: Reset
+          content:
+            application/json:
+              schema: {type: object, required: [temporaryPassword], properties: {temporaryPassword: {type: string}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
   /api/admin/accounts/{accountId}:
     patch:
       operationId: updateAccount
@@ -513,7 +601,10 @@ paths:
       - {name: transition, in: path, required: true, schema: {type: string, enum: [approve, publish, withdraw]}}
     post:
       operationId: transitionVersion
-      description: MANAGE_DOCUMENTS. Publish requires prior approval. Audited. Invalid state returns 409.
+      description: >-
+        MANAGE_DOCUMENTS. Audited. Invalid state returns 409. By default (zhiku.document.require-approval=false) publish also
+        approves the version as the publisher (audit detail autoApproved), so upload-then-publish is one step; with
+        require-approval=true publish needs a prior approve (409 "Version must be approved before publishing").
       responses:
         '204': {description: Done}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -526,8 +617,10 @@ paths:
     put:
       operationId: uploadContent
       description: >-
-        MANAGE_DOCUMENTS. UTF-8 .md/.markdown/.txt only (client content type ignored), non-empty, no binary control
-        characters, at most 20 MB. Content is immutable per version. The file and a queued job are stored in one
+        MANAGE_DOCUMENTS. .md/.markdown/.txt (UTF-8, no binary control characters), .pdf (text layer only; scanned or
+        encrypted PDFs are 422) or .docx (headings become Markdown headings, tables become rows; legacy .doc is 422). The type
+        comes from the file name and is checked against the file signature (client content type ignored). Non-empty text,
+        at most 20 MB. The original file is stored. Content is immutable per version. The file and a queued job are stored in one
         transaction; parsing and chunking run later in the durable worker. Audited with size and SHA-256 only.
       requestBody:
         required: true
@@ -977,6 +1070,7 @@ components:
                   username: {type: string}
                   displayName: {type: [string, 'null']}
                   roles: {type: array, items: {type: string}}
+                  mustChangePassword: {type: boolean, description: 'Signed in with a temporary password; the console asks for a new one'}
     RateLimited:
       description: Too many requests from this address or user
       headers:
