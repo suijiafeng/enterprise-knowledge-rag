@@ -1,4 +1,5 @@
 import { Alert, Button, Card, Input, InputNumber, Popconfirm, Space, Tag, Typography } from "antd";
+import { useNotice } from "../../notice";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type ConfigCandidateBody, type ConfigOverview, type KnowledgeBaseConfig } from "../../api/client";
@@ -119,8 +120,8 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
   const [overview, setOverview] = useState<ConfigOverview>();
   const [form, setForm] = useState<ConfigForm>();
   const [loadError, setLoadError] = useState<string>();
-  const [error, setError] = useState<string>();
-  const [notice, setNotice] = useState<string>();
+  const [conflict, setConflict] = useState<string>();
+  const notice = useNotice();
   const [busy, setBusy] = useState(false);
 
   const gate = useRef(createRequestGate());
@@ -142,16 +143,16 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
 
   const act = async (fn: () => Promise<unknown>, done: string) => {
     setBusy(true);
-    setError(undefined);
-    setNotice(undefined);
+    setConflict(undefined);
     let failed = false;
     try {
       await fn();
-      setNotice(done);
+      notice.success(done);
     } catch (e) {
       failed = true;
-      if (e instanceof ApiError && e.code === "CONFIG_CONFLICT") setError("候选配置已被他人修改，已刷新到最新版本；你的修改仍保留在表单中，请核对后再保存。");
-      else setError(failure(e));
+      // 冲突需要用户核对表单，留在页面上；其他失败只做提示。
+      if (e instanceof ApiError && e.code === "CONFIG_CONFLICT") setConflict("候选配置已被他人修改，已刷新到最新版本；你的修改仍保留在表单中，请核对后再保存。");
+      else notice.error(failure(e), 5);
     } finally {
       setBusy(false);
     }
@@ -170,9 +171,8 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
   const blockers = publishBlockers(candidate, dirty);
   return (
     <>
-      {loadError && <Alert type="error" showIcon closable className="scaffold-alert" title={`刷新失败：${loadError}`} onClose={() => setLoadError(undefined)} />}
-      {error && <Alert type="error" showIcon closable className="scaffold-alert" title={error} onClose={() => setError(undefined)} />}
-      {notice && <Alert type="success" showIcon closable className="scaffold-alert" title={notice} onClose={() => setNotice(undefined)} />}
+      {loadError && <Alert type="warning" showIcon closable className="scaffold-alert" title={`刷新失败，显示的是上次读取的配置：${loadError}`} onClose={() => setLoadError(undefined)} />}
+      {conflict && <Alert type="error" showIcon closable className="scaffold-alert" title={conflict} onClose={() => setConflict(undefined)} />}
       <PublishedCard published={overview.published} history={overview.history} defaults={overview.defaults} />
       <Card size="small" className="debug-card" title={candidate ? `候选配置 · 修订 ${candidate.revision}` : "候选配置"}
         extra={dirty && <Tag color="orange">未保存</Tag>}>

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { App, pageFor } from "./App";
+import { App } from "./App";
+import { pageFor } from "./pageFor";
 import { createClient } from "./api/client";
 
 describe("admin shell", () => {
@@ -26,7 +27,7 @@ describe("admin shell", () => {
   });
 
   it("shows sample pages only without a session, and real pages once a knowledge base is selected", async () => {
-    const { pageFor } = await import("./App");
+    const { pageFor } = await import("./pageFor");
     const { createClient } = await import("./api/client");
     const client = createClient("t", async () => new Response("[]", { headers: { "Content-Type": "application/json" } }));
     expect(renderToStaticMarkup(pageFor("documents"))).toContain("员工手册 v3.2.pdf");
@@ -37,7 +38,7 @@ describe("admin shell", () => {
   });
 
   it("routes the documents nav item to a real page, not a placeholder", async () => {
-    const { pageFor } = await import("./App");
+    const { pageFor } = await import("./pageFor");
     expect(renderToStaticMarkup(pageFor("documents"))).toContain("文档管理");
     expect(renderToStaticMarkup(pageFor("documents"))).not.toContain("待实现");
     expect(renderToStaticMarkup(pageFor("qa"))).toContain("问答工作台");

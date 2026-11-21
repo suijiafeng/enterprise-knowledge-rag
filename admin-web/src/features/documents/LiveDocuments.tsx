@@ -1,13 +1,14 @@
-import { Alert, Button, Card, DatePicker, Input, Popconfirm, Space, Table, Tag, Typography } from "antd";
-import dayjs from "dayjs";
+import { Button, Card, Drawer, Popconfirm, Space, Table, Tag, Typography, Upload } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type DeletionInfo, type DocumentInfo, type Status, type VersionInfo } from "../../api/client";
 import { IndexStatusTag, type IndexStatus } from "../../components/IndexStatusTag";
-import { EmptyState, LoadingList } from "../../components/StateViews";
+import { EmptyState, ErrorState, LoadingList } from "../../components/StateViews";
 import { formatInstant } from "../../format";
 import { usePollingLoad } from "../../hooks/usePollingLoad";
 import { ChunkEditor } from "./ChunkEditor";
+import { UploadDocumentModal } from "./UploadDocumentModal";
+import { useNotice } from "../../notice";
 
 export const indexState = (s: VersionInfo["indexStatus"]): IndexStatus =>
   s === "ready" ? "indexed" : s === "failed" ? "failed" : s === "processing" ? "parsing" : "pending";
@@ -54,43 +55,31 @@ function businessState(v: VersionInfo) {
 
 const failure = (e: unknown) => (e instanceof ApiError ? `${e.message}（${e.code}${e.requestId ? ` · ${e.requestId}` : ""}）` : "请求失败");
 
-function NewVersionForm({ onCreate }: { onCreate: (label: string, from: string, until: string) => void }) {
-  const [label, setLabel] = useState("");
-  const [from, setFrom] = useState("");
-  const [until, setUntil] = useState("");
-  return (
-    <Space wrap className="version-form">
-      <Input size="small" placeholder="版本号，如 v3.2" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="版本号" />
-      <DatePicker size="small" aria-label="生效日期" placeholder="生效日期" allowClear value={from ? dayjs(from) : null} onChange={(value) => setFrom(value ? value.format("YYYY-MM-DD") : "")} />
-      <DatePicker size="small" aria-label="失效日期（可空）" placeholder="失效日期（可空）" allowClear value={until ? dayjs(until) : null} onChange={(value) => setUntil(value ? value.format("YYYY-MM-DD") : "")} />
-      <Button size="small" disabled={!label.trim() || !from} onClick={() => onCreate(label.trim(), from, until)}>新建版本</Button>
-    </Space>
-  );
-}
-
 /** 来自服务端的所选知识库文档：业务状态与索引状态分开显示。 */
 export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbId: string; status: Status | undefined }) {
   const zone = status?.businessTimeZone ?? "Asia/Shanghai";
   const [docs, setDocs] = useState<DocumentInfo[]>();
-  const [error, setError] = useState<string>();
-  const [title, setTitle] = useState("");
-  const fileInput = useRef<HTMLInputElement>(null);
-  const uploadTarget = useRef<{ doc: string; version: string }>(undefined);
+  const [loadError, setLoadError] = useState<string>();
+  const [upload, setUpload] = useState<{ docId?: string }>();
+  const notice = useNotice();
 
   const gate = useRef(createRequestGate());
   const load = useCallback(async () => {
     const g = gate.current.next();
     try {
       const docs = await client.documents(kbId);
-      if (gate.current.isCurrent(g)) setDocs(docs);
+      if (gate.current.isCurrent(g)) {
+        setDocs(docs);
+        setLoadError(undefined);
+      }
     } catch (e) {
-      if (gate.current.isCurrent(g)) setError(failure(e));
+      if (gate.current.isCurrent(g)) setLoadError(failure(e));
     }
   }, [client, kbId]);
 
   useEffect(() => {
     setDocs(undefined);
-    setError(undefined);
+    setLoadError(undefined);
     void load();
   }, [load]);
 
@@ -102,13 +91,14 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
     await load();
   });
 
-  const act = async (fn: () => Promise<unknown>, watchAfter = false) => {
-    setError(undefined);
+  /** 操作结果用浮层提示；失败也只是提示，列表随后刷新为服务端的真实状态。 */
+  const act = async (fn: () => Promise<unknown>, done: string, watchAfter = false) => {
     if (watchAfter) setWatch(WATCH_POLLS);
     try {
       await fn();
+      notice.success(done);
     } catch (e) {
-      setError(failure(e));
+      notice.error(`操作失败：${failure(e)}`, 5);
     }
     await load();
   };
@@ -136,9 +126,17 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
       key: "actions",
       render: (_: unknown, v: VersionInfo) => (
         <Space wrap size={4}>
-          <Button size="small" onClick={() => { uploadTarget.current = { doc: doc.id, version: v.id }; fileInput.current?.click(); }}>上传内容</Button>
-          <Button size="small" disabled={v.approved || v.withdrawn} onClick={() => act(() => client.transition(kbId, doc.id, v.id, "approve"))}>批准</Button>
-          <Button size="small" disabled={!v.approved || v.published || v.withdrawn} onClick={() => act(() => client.transition(kbId, doc.id, v.id, "publish"))}>发布</Button>
+          {v.indexStatus === "pending" && (
+            <Upload accept=".md,.markdown,.txt" showUploadList={false} beforeUpload={(file) => {
+              void act(() => client.upload(kbId, doc.id, v.id, file), "已上传，正在建立索引", true);
+              return false;
+            }}>
+              <Button size="small">上传内容</Button>
+            </Upload>
+          )}
+          <Button size="small" disabled={v.approved || v.withdrawn} onClick={() => act(() => client.transition(kbId, doc.id, v.id, "approve"), "已批准")}>批准</Button>
+          <Button size="small" type={v.approved && !v.published && !v.withdrawn ? "primary" : "default"} disabled={!v.approved || v.published || v.withdrawn}
+            onClick={() => act(() => client.transition(kbId, doc.id, v.id, "publish"), "已发布")}>发布</Button>
           <Popconfirm
             title="撤回该版本？"
             description="立即停止检索、引用与问答，依赖它的历史回答将被隐藏；撤回后不能再批准或发布该版本。"
@@ -146,11 +144,11 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
             cancelText="取消"
             okButtonProps={{ danger: true }}
             disabled={v.withdrawn}
-            onConfirm={() => act(() => client.transition(kbId, doc.id, v.id, "withdraw"))}
+            onConfirm={() => act(() => client.transition(kbId, doc.id, v.id, "withdraw"), "已撤回")}
           >
             <Button size="small" danger disabled={v.withdrawn}>撤回</Button>
           </Popconfirm>
-          <Button size="small" disabled={v.indexStatus === "pending" || v.indexStatus === "processing"} onClick={() => act(() => client.reindex(kbId, doc.id, v.id), true)}>重建索引</Button>
+          <Button size="small" disabled={v.indexStatus === "pending" || v.indexStatus === "processing"} onClick={() => act(() => client.reindex(kbId, doc.id, v.id), "已开始重建索引", true)}>重建索引</Button>
           <Button size="small" onClick={() => setEditing({ doc: doc.id, version: v.id, title: `${doc.title} ${v.versionLabel}` })}>编辑切块</Button>
         </Space>
       ),
@@ -166,28 +164,29 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
             已连接本地服务 · 格式 {status?.uploadFormats.join(" / ") ?? "—"} · 单文件上限 {status ? Math.round(status.maxUploadBytes / 1048576) : "—"} MB · 业务时区 {zone}
           </Typography.Text>
         </div>
-        <Space>
-          <Input placeholder="新文档标题" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="新文档标题" />
-          <Button type="primary" disabled={!title.trim()} onClick={() => act(async () => { await client.createDocument(kbId, title.trim()); setTitle(""); })}>新建文档</Button>
-        </Space>
+        <Button type="primary" onClick={() => setUpload({})}>上传文档</Button>
       </div>
-      {error && <Alert type="error" showIcon closable className="scaffold-alert" title="操作失败" description={error} onClose={() => setError(undefined)} />}
-      <input
-        ref={fileInput}
-        type="file"
-        accept=".md,.markdown,.txt"
-        hidden
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          const target = uploadTarget.current;
-          e.target.value = "";
-          if (file && target) void act(() => client.upload(kbId, target.doc, target.version, file), true);
-        }}
-      />
+      <UploadDocumentModal open={upload !== undefined} client={client} kbId={kbId} docs={docs ?? []} presetDocId={upload?.docId}
+        onClose={() => setUpload(undefined)}
+        onUploaded={(title, published) => {
+          setUpload(undefined);
+          setWatch(WATCH_POLLS);
+          notice.success(published ? `《${title}》已上传并发布，正在建立索引` : `《${title}》已上传，批准并发布后可用于问答`);
+          void load();
+        }} />
+      <Drawer open={editing !== undefined} title={editing ? `编辑切块 · ${editing.title}` : "编辑切块"} size={720}
+        closable={{ placement: "end" }} onClose={() => setEditing(undefined)} destroyOnHidden>
+        {editing && (
+          <ChunkEditor client={client} kbId={kbId} documentId={editing.doc} versionId={editing.version} title={editing.title}
+            onSaved={() => { notice.success("切块已保存并重新向量化"); void load(); }} />
+        )}
+      </Drawer>
       <Card className="doc-table">
-        {docs === undefined && !error && <div className="state-pad"><LoadingList /></div>}
+        {docs === undefined && !loadError && <div className="state-pad"><LoadingList /></div>}
+        {docs === undefined && loadError && <div className="state-pad"><ErrorState code="LOAD_FAILED" message={`文档列表读取失败：${loadError}`} onRetry={() => void load()} /></div>}
         {docs?.length === 0 && (
-          <EmptyState icon="doc" title="暂无文档" description="在右上角新建文档，再为版本上传 .md / .txt；版本需批准、发布、处于有效期且索引就绪后才能用于问答。" />
+          <EmptyState icon="doc" title="暂无文档" description="点右上角「上传文档」选择 .md / .txt；版本需批准、发布、处于有效期且索引就绪后才能用于问答。"
+            action={<Button type="primary" onClick={() => setUpload({})}>上传文档</Button>} />
         )}
         {docs && docs.length > 0 && <Table<DocumentInfo>
           rowKey="id"
@@ -201,12 +200,6 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
               <div className="version-panel">
                 <Table<VersionInfo> size="small" rowKey="id" pagination={false} dataSource={doc.versions} columns={versionColumns(doc)}
                   locale={{ emptyText: "暂无版本" }} scroll={{ x: 760 }} />
-                <NewVersionForm onCreate={(label, from, until) => act(() => client.createVersion(kbId, doc.id,
-                  until ? { versionLabel: label, effectiveFrom: from, effectiveUntil: until } : { versionLabel: label, effectiveFrom: from }))} />
-                {editing?.doc === doc.id && (
-                  <ChunkEditor client={client} kbId={kbId} documentId={editing.doc} versionId={editing.version} title={editing.title}
-                    onSaved={() => void load()} />
-                )}
               </div>
             ),
           }}
@@ -228,20 +221,23 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
               key: "op",
               render: (_, d) => {
                 if (d.deletion?.status === "failed") {
-                  return <Button size="small" onClick={() => act(() => client.deleteDocument(kbId, d.id), true)}>重试清理</Button>;
+                  return <Button size="small" onClick={() => act(() => client.deleteDocument(kbId, d.id), "已重新排队清理", true)}>重试清理</Button>;
                 }
                 if (d.deletion) return null;
                 return (
+                  <Space size={4}>
+                  <Button size="small" onClick={() => setUpload({ docId: d.id })}>上传新版本</Button>
                   <Popconfirm
                     title="删除该文档的全部版本？"
                     description="立即停止检索、引用与问答，依赖它的历史回答将被隐藏；原文、切块与向量随后在后台清理，不可恢复。数据库备份中的副本不在此清理范围内。"
                     okText="删除"
                     cancelText="取消"
                     okButtonProps={{ danger: true }}
-                    onConfirm={() => act(() => client.deleteDocument(kbId, d.id), true)}
+                    onConfirm={() => act(() => client.deleteDocument(kbId, d.id), "已删除，后台清理中", true)}
                   >
                     <Button size="small" danger>删除</Button>
                   </Popconfirm>
+                  </Space>
                 );
               },
             },

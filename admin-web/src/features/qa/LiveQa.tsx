@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Input, Tag, Typography } from "antd";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useNotice } from "../../notice";
 import { type ApiClient, type Conversation, type HistoryMessage } from "../../api/client";
 import { clearPending, loadPending, recoveryAction } from "../../api/chatRecovery";
 import { streamAnswer } from "../../api/chatStream";
@@ -41,8 +42,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
   const [selected, setSelected] = useState<string>();
   const [question, setQuestion] = useState("");
   const [active, setActive] = useState<number>();
-  const [error, setError] = useState<string>();
-  const [notice, setNotice] = useState<string>();
+  const notice = useNotice();
   const [olderCursor, setOlderCursor] = useState<string | null>(null);
   const [stream, dispatch] = useReducer(chatReducer, initialChatState);
   const abort = useRef<AbortController>(undefined);
@@ -62,7 +62,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
       const all = await client.conversations();
       if (loads.current.isCurrent(g)) setConversations(all.filter((c) => c.kbId === kbId));
     } catch {
-      if (loads.current.isCurrent(g)) setError("无法读取会话历史");
+      if (loads.current.isCurrent(g)) notice.error("无法读取会话历史");
     }
   }, [client, kbId]);
 
@@ -88,7 +88,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
         setSelected(messages.at(-1)?.id);
       }
     } catch {
-      if (loads.current.isCurrent(g)) setError("无法读取该会话");
+      if (loads.current.isCurrent(g)) notice.error("无法读取该会话");
     } finally {
       if (loads.current.isCurrent(g)) setHistoryLoading(false);
     }
@@ -129,12 +129,12 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
         if (stopped) return;
         const action = recoveryAction(outcome.status);
         if (action !== "load" || !outcome.conversationId) {
-          if (action === "wait") setNotice("上一次提问已提交，仍在生成。刷新只会查询，不会重新发送。");
+          if (action === "wait") notice.info("上一次提问已提交，仍在生成。刷新只会查询，不会重新发送。", 5);
           else clearPending();
           return;
         }
         clearPending();
-        setNotice("已按原请求编号恢复，没有重新发送。");
+        notice.success("已按原请求编号恢复，没有重新发送。");
         setConversationId(outcome.conversationId);
         setHistoryLoading(true);
         await loadHistory(outcome.conversationId);
@@ -154,7 +154,6 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
     const q = text.trim();
     if (!q || running || historyLoading) return;
     setQuestion("");
-    setError(undefined);
     abort.current = new AbortController();
     const generation = gate.current.next();
     const current = () => gate.current.isCurrent(generation);
@@ -175,11 +174,18 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
     dispatch({ type: "cancel" });
   };
 
+  // 新消息或流式内容到达时滚到最新一条；输入框固定在底部。
+  const thread = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = thread.current;
+    if (el && typeof el.scrollTo === "function") el.scrollTo({ top: el.scrollHeight });
+  }, [history, stream.text, stream.status]);
+
   const selectedMessage = history.find((m) => m.id === selected);
   const citations = visibleCitations(running, stream.citations, selectedMessage);
 
   return (
-    <div className="page">
+    <div className="page qa-page">
       <div className="page-head">
         <div>
           <Typography.Title level={3} className="page-title">问答工作台</Typography.Title>
@@ -187,8 +193,6 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
         </div>
       </div>
       {!modelEnabled && <Alert type="warning" showIcon className="scaffold-alert" title="服务端未配置对话模型" description="设置 ZHIKU_CHAT_PROVIDER=ollama 后重启服务。" />}
-      {notice && <Alert type="info" showIcon closable className="scaffold-alert" title={notice} onClose={() => setNotice(undefined)} />}
-      {error && <Alert type="error" showIcon closable className="scaffold-alert" title={error} onClose={() => setError(undefined)} />}
       <div className="qa-grid">
         <Card size="small" title="会话历史">
           <Button type="primary" block onClick={() => openConversation(undefined)}>+ 新会话</Button>
@@ -206,6 +210,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
         </Card>
 
         <Card size="small" className="qa-main">
+          <div className="qa-thread" ref={thread}>
           {historyLoading && <LoadingList rows={3} />}
           {!historyLoading && history.length === 0 && stream.status === "idle" && (
             <EmptyState icon="chat" title="暂无问答记录" description="输入问题开始提问；回答只依据当前授权且生效的版本。" />
@@ -218,7 +223,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
               <div className="bubble-user">{m.question}</div>
               <div className={m.id === selected ? "answer-card selected" : "answer-card"}>
                 {m.status === "refused" && m.errorCode === "NO_EVIDENCE" ? (
-                  <NoEvidenceAnswer />
+                  <NoEvidenceAnswer message={m.reason ?? undefined} />
                 ) : m.status !== "complete" ? (
                   <OutcomeNote status={m.status} errorCode={m.errorCode} />
                 ) : m.hidden ? (
@@ -235,7 +240,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
                       try {
                         await client.rate(m.id, body);
                       } catch (e) {
-                        setError("反馈提交失败");
+                        notice.error("反馈提交失败");
                         throw e;
                       }
                       await loadHistory(conversationId);
@@ -266,6 +271,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
               </div>
             </>
           )}
+          </div>
           <div className="composer">
             <Input.TextArea rows={3} value={question} onChange={(e) => setQuestion(e.target.value)} maxLength={2000}
               placeholder={modelEnabled ? "输入问题…（Enter 发送，Shift+Enter 换行）" : "对话模型未配置"} disabled={!modelEnabled || running || historyLoading}

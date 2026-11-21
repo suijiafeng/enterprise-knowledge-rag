@@ -167,6 +167,23 @@ describe("refusals and cited sources", () => {
     expect(screen.queryByRole("button", { name: /重试/ })).toBeNull();
   });
 
+  it("uses the server's refusal text in history so it matches the live answer", async () => {
+    const live = "资料中没有足够依据回答这个问题。可以换个说法再问，或联系人事服务台。";
+    const refused: HistoryMessage = { ...answered, id: "m5", answer: null, status: "refused", errorCode: "NO_EVIDENCE", reason: live };
+    render(<LiveQa client={clientWith({ conversations: vi.fn(async () => [conversation]), messages: vi.fn(async () => [refused]) })} kbId="kb" modelEnabled />);
+    fireEvent.click(await screen.findByText("虚构会话"));
+    expect(await screen.findByText(live)).toBeTruthy();
+  });
+
+  it("keeps the composer outside the scrolling thread so it stays at the bottom", async () => {
+    render(<LiveQa client={clientWith({ conversations: vi.fn(async () => []) })} kbId="kb" modelEnabled />);
+    const input = await screen.findByLabelText("问题输入");
+    const thread = document.querySelector(".qa-thread");
+    expect(thread).toBeTruthy();
+    expect(thread?.contains(input)).toBe(false);
+    expect(input.closest(".composer")?.parentElement?.classList.contains("ant-card-body")).toBe(true);
+  });
+
   it("lists only the sources the answer cited, keeping their numbers, and shows the support check", async () => {
     const withSources: HistoryMessage = {
       ...answered, id: "m4", answer: "依据第二条[2]。",

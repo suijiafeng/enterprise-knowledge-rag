@@ -1,4 +1,4 @@
-import { Button, Input, Space, Typography } from "antd";
+import { Alert, Button, Input, Space, Typography } from "antd";
 import { useEffect, useState } from "react";
 import type { ApiClient, ChunkView } from "../../api/client";
 import { EmptyState } from "../../components/StateViews";
@@ -71,7 +71,7 @@ export function ChunkEditor({ client, kbId, documentId, versionId, title, onSave
   return (
     <div className="chunk-editor">
       <Typography.Text type="secondary" className="chunk-sub">{title} · 保存后重新生成这些切块的向量，并立即用于检索。原文文件不变，偏移仍指向原文字符区间。</Typography.Text>
-      {error && <div className="card-unit">{error}</div>}
+      {error && <Alert type="error" showIcon title={error} className="modal-alert" />}
       {!chunks && !error && <EmptyState icon="doc" title="正在读取切块" description="只显示这个版本已经入库的切块。" />}
       {chunks?.length === 0 && <EmptyState icon="doc" title="还没有切块" description="上传内容并完成索引后才能编辑。" />}
       {chunks?.map((chunk, index) => (
@@ -88,7 +88,11 @@ export function ChunkEditor({ client, kbId, documentId, versionId, title, onSave
           </Space>
         </div>
       ))}
-      {chunks && chunks.length > 0 && <Button type="primary" size="small" loading={busy} onClick={() => void save()}>保存并重新向量化</Button>}
+      {chunks && chunks.length > 0 && (
+        <div className="sticky-foot">
+          <Button type="primary" loading={busy} onClick={() => void save()}>保存并重新向量化</Button>
+        </div>
+      )}
     </div>
   );
 }

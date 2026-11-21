@@ -15,8 +15,10 @@ body {
 .ant-btn:active { transform: scale(0.98); }
 .ant-btn-primary, .ant-btn-default, .ant-card { box-shadow: none; }
 
-.shell { min-height: 100vh; background: #f4f6f9; }
-.shell-sider.ant-layout-sider { background: #1f2638; border-right: 0; position: sticky; top: 0; height: 100vh; overflow: visible; }
+/* 外壳固定为一屏高：侧栏通高深色，内容区自己滚动，页头不随内容滚走。 */
+.shell { height: 100vh; overflow: hidden; background: #1f2638; }
+.shell-main.ant-layout { height: 100vh; overflow: hidden; background: #f4f6f9; }
+.shell-sider.ant-layout-sider { background: #1f2638; border-right: 0; height: 100vh; overflow: visible; }
 .shell-sider .ant-layout-sider-zero-width-trigger { top: 10px; inset-inline-start: 8px; width: 32px; height: 32px; line-height: 32px; background: #2f5bd3; color: #fff; border-radius: 6px; z-index: 20; }
 .shell-sider .ant-layout-sider-children { display: flex; flex-direction: column; min-height: 100%; max-height: 100vh; overflow: auto; background: #1f2638; }
 .brand { display: flex; gap: 10px; align-items: center; padding: 16px; }
@@ -30,8 +32,15 @@ body {
 
 .shell-header.ant-layout-header { background: #fff; height: 52px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e6e9ef; line-height: normal; }
 .shell-tools { display: flex; gap: 8px; align-items: center; }
-.shell-content { padding: 16px 20px 28px; }
+.shell-content { padding: 12px 20px 28px; overflow: auto; flex: 1; min-height: 0; }
+.shell-content-qa { display: flex; flex-direction: column; padding-bottom: 16px; }
 .scaffold-alert { margin-bottom: 16px; }
+.route-loading { display: grid; place-items: center; min-height: 240px; }
+
+.dev-banner { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 2px 4px 2px 10px; font-size: 12px; line-height: 20px; color: #8a5a00; background: #fff8e6; border: 1px solid #f5e1b0; border-radius: 6px; }
+.dev-banner > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-dot { width: 6px; height: 6px; border-radius: 50%; background: #d97706; flex: none; }
+.dev-banner-close.ant-btn { color: #8a5a00; height: 20px; width: 20px; padding: 0; min-width: 20px; font-size: 14px; line-height: 1; }
 
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
 .page-title.ant-typography { margin: 0; font-weight: 600; letter-spacing: normal; }
@@ -108,6 +117,14 @@ body {
 .composer .ant-input { border: 0; box-shadow: none; resize: none; padding-inline: 0; }
 .composer-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: #8b93a7; padding: 4px 0; }
 .qa-empty { margin: 16px 0; }
+/* 实时问答：三栏占满内容区，对话区内部滚动，输入框固定在底部。 */
+.qa-page { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.qa-page .qa-grid { flex: 1; min-height: 0; align-items: stretch; }
+.qa-page .qa-grid > .ant-card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.qa-page .qa-grid > .ant-card > .ant-card-body { flex: 1; min-height: 0; overflow: auto; }
+.qa-page .qa-main > .ant-card-body { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 8px; }
+.qa-thread { flex: 1; min-height: 0; overflow: auto; padding-right: 4px; }
+.qa-page .composer { flex: none; background: #fff; }
 .source-card { background: transparent; border: 0; border-bottom: 1px solid #e6e9ef; border-radius: 0; padding: 10px 0; margin: 0; }
 .source-card.active { background: #eef2fb; box-shadow: inset 2px 0 0 #2f5bd3; }
 .source-head { display: flex; gap: 8px; font-size: 13px; margin-bottom: 6px; min-width: 0; }
@@ -117,6 +134,11 @@ body {
 
 @media (max-width: 1200px) {
   .qa-grid, .qa-grid.no-history, .qa-grid.no-sources { grid-template-columns: minmax(0, 1fr); }
+  /* 窄屏改为整页滚动，对话放最前，输入框吸附在可视区底部。 */
+  .shell-content-qa, .qa-page { display: block; }
+  .qa-page .qa-main { order: -1; }
+  .qa-page .qa-grid > .ant-card, .qa-page .qa-grid > .ant-card > .ant-card-body, .qa-thread { overflow: visible; }
+  .qa-page .composer { position: sticky; bottom: -16px; z-index: 2; padding-bottom: 8px; }
 }
 
 .debug-card { margin-bottom: 16px; }
@@ -229,4 +251,27 @@ mark.eval-hit { background: #f0f2f5; color: inherit; box-shadow: inset 0 -1px 0 
   .stage-flow { flex-direction: column; overflow: visible; }
   .stage { flex-basis: auto; }
   .stage-arrow { transform: rotate(90deg); align-self: flex-start; margin-left: 16px; }
+}
+
+/* 弹窗与抽屉：关闭图标统一在右上角，主按钮在右下角。 */
+.modal-alert { margin-bottom: 12px; }
+.upload-form .ant-form-item { margin-bottom: 14px; }
+.upload-form .form-last { margin-bottom: 0; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.form-row .ant-form-item { min-width: 0; }
+.full { width: 100%; }
+.upload-hint-main { margin: 0; font-weight: 500; }
+.upload-hint { margin: 2px 0 0; color: #8b93a7; font-size: 12px; }
+.sticky-foot { position: sticky; bottom: -24px; display: flex; justify-content: flex-end; gap: 8px; margin: 12px -24px -24px; padding: 12px 24px; background: #fff; border-top: 1px solid #e6e9ef; }
+.ant-drawer-header .ant-drawer-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 授权：按姓名选人。 */
+.grant-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+.user-picker { flex: 1; min-width: 0; }
+.user-option, .user-cell { display: flex; flex-direction: column; line-height: 1.4; min-width: 0; }
+.user-option > span, .user-cell > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 768px) {
+  .form-row { grid-template-columns: 1fr; gap: 0; }
+  .shell-header .ant-breadcrumb { display: none; }
+  .shell-tools { margin-left: auto; min-width: 0; }
 }

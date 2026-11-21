@@ -283,6 +283,17 @@ export interface AdminKnowledgeBase {
 export interface Grant {
   userId: string;
   grantedAt: string;
+  /** 来自本地用户目录镜像；用户尚未同步时为 null。 */
+  displayName?: string | null;
+  email?: string | null;
+  department?: string | null;
+}
+
+export interface DirectoryUser {
+  id: string;
+  displayName: string;
+  email: string | null;
+  department: string | null;
 }
 
 export interface OverviewApi {
@@ -535,6 +546,7 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
     me: () => request<Me>("/api/me"),
     rolePolicy: () => request<RolePolicy>("/api/policy/roles"),
     adminKnowledgeBases: () => request<AdminKnowledgeBase[]>("/api/admin/knowledge-bases"),
+    users: (q: string) => request<DirectoryUser[]>(`/api/admin/users?q=${e(q)}&limit=20`),
     createKnowledgeBase: (name: string) => request<KnowledgeBase>("/api/knowledge-bases", post({ name })),
     grants: (kbId: string) => request<Grant[]>(`${kb(kbId)}/grants`),
     grant: (kbId: string, userId: string) => request<void>(`${kb(kbId)}/grants/${e(userId)}`, { method: "PUT" }),

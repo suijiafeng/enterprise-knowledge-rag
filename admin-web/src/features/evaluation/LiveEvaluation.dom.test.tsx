@@ -93,7 +93,7 @@ describe("evaluation evidence interactions", () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect((button as HTMLButtonElement).disabled).toBe(true);
     reject(new ApiError(422, "UNPROCESSABLE", "请核对样本字段"));
-    await screen.findByText("请核对样本字段");
+    await screen.findByText(/请核对样本字段（UNPROCESSABLE）/);
     await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
     expect((screen.getByLabelText("评测问题") as HTMLInputElement).value).toBe("虚构转交问题");
     fireEvent.click(button);

@@ -1,4 +1,5 @@
-import { Alert, Button, Card, Input, Select, Space, Table, Tag } from "antd";
+import { Button, Card, Input, InputNumber, Select, Space, Table, Tag } from "antd";
+import { useNotice } from "../../notice";
 import { useEffect, useRef, useState } from "react";
 import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type ConfigOverview, type TraceResult } from "../../api/client";
@@ -27,7 +28,7 @@ export function LiveDebug({ client, kbId, kbName }: { client: ApiClient; kbId: s
   const [config, setConfig] = useState<ConfigOverview>();
   const [result, setResult] = useState<TraceResult>();
   const [baseline, setBaseline] = useState<TraceResult>();
-  const [error, setError] = useState<string>();
+  const notice = useNotice();
   const [busy, setBusy] = useState(false);
 
   const gate = useRef(createRequestGate());
@@ -36,7 +37,6 @@ export function LiveDebug({ client, kbId, kbName }: { client: ApiClient; kbId: s
     gate.current.invalidate();
     setResult(undefined);
     setBaseline(undefined);
-    setError(undefined);
     setBusy(false);
     setVersion(CUSTOM);
     setConfig(undefined);
@@ -47,7 +47,6 @@ export function LiveDebug({ client, kbId, kbName }: { client: ApiClient; kbId: s
   const run = async () => {
     const g = gate.current.next();
     setBusy(true);
-    setError(undefined);
     try {
       const next = version === CUSTOM
         ? await client.retrievalDebug(kbId, query.trim(), Number(k))
@@ -57,7 +56,7 @@ export function LiveDebug({ client, kbId, kbName }: { client: ApiClient; kbId: s
       setBaseline(result && result.question === next.question ? result : undefined);
       setResult(next);
     } catch (e) {
-      if (gate.current.isCurrent(g)) setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "请求失败");
+      if (gate.current.isCurrent(g)) notice.error(`检索失败：${e instanceof ApiError ? `${e.message}（${e.code}）` : "请求失败"}`, 5);
     } finally {
       if (gate.current.isCurrent(g)) setBusy(false);
     }
@@ -73,13 +72,12 @@ export function LiveDebug({ client, kbId, kbName }: { client: ApiClient; kbId: s
             onPressEnter={() => query.trim() && void run()} aria-label="调试问题" maxLength={2000} />
           <Select className="debug-version" value={version} onChange={setVersion} options={versionOptions(config)} aria-label="检索配置" />
           {version === CUSTOM && (
-            <Input className="debug-k" type="number" min={1} max={30} value={k} onChange={(e) => setK(e.target.value)} aria-label="召回数量 K" addonBefore="K" />
+            <InputNumber className="debug-k" min={1} max={30} precision={0} value={k === "" ? null : Number(k)} onChange={(v) => setK(v === null ? "" : String(v))} aria-label="召回数量 K" prefix="K" />
           )}
           <Button type="primary" loading={busy} disabled={!query.trim()} onClick={() => void run()}>{result ? "再运行" : "运行检索"}</Button>
         </Space>
         <div className="card-unit">再运行会生成新的轨迹，不覆盖上一次，也不改变或发布配置；只做检索，不调用对话模型，不产生模型费用。</div>
       </Card>
-      {error && <Alert type="error" showIcon className="scaffold-alert" title="检索失败" description={error} />}
       {rows && baseline && result && (
         <Card size="small" className="debug-card"
           title={<>对比 · 基线 {configLabel(baseline.configVersion ?? 0)} vs 本次 {configLabel(result.configVersion ?? 0)}
@@ -97,7 +95,7 @@ export function LiveDebug({ client, kbId, kbName }: { client: ApiClient; kbId: s
       {trace && trace.candidates.length === 0 && (
         <div className="debug-card"><EmptyState icon="search" title="无检索结果" description="没有符合授权与效力的切块：检查文档版本是否已发布、在生效期内且索引就绪。" /></div>
       )}
-      {trace ? <RetrievalDebugPage trace={trace} live /> : <Alert type="info" showIcon title="输入问题后运行，查看本次检索的各阶段与候选得分。" />}
+      {trace ? <RetrievalDebugPage trace={trace} live /> : <div className="debug-card"><EmptyState icon="search" title="还没有运行检索" description="输入问题后运行，查看本次检索的各阶段与候选得分。" /></div>}
     </>
   );
 }

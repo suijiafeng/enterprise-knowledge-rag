@@ -1,4 +1,6 @@
-import { Alert, Button, Card, Checkbox, Col, Input, InputNumber, Row, Select, Space, Tag, Typography } from "antd";
+import { Alert, Button, Card, Checkbox, Col, DatePicker, Input, InputNumber, Row, Select, Space, Tag, Typography, Upload } from "antd";
+import dayjs from "dayjs";
+import { useNotice } from "../../notice";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type DocumentInfo, type EvalCase, type EvalResult, type EvalSummary, type EvidenceInput, type CaseDetails } from "../../api/client";
@@ -217,8 +219,9 @@ function EvidenceForm({ docs, initial, onSubmit, onCancel, submitLabel }: {
         onChange={(e) => setDetails({ ...details, facts: e.target.value })} />
       <Input placeholder="适用对象（可空），如：正式员工" maxLength={200} value={details.appliesTo} aria-label="适用对象"
         onChange={(e) => setDetails({ ...details, appliesTo: e.target.value })} />
-      <Input type="datetime-local" value={details.queryAt} aria-label="查询时点（可空，默认运行时刻）"
-        onChange={(e) => setDetails({ ...details, queryAt: e.target.value })} />
+      <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" placeholder="查询时点（可空，默认运行时刻）" aria-label="查询时点（可空，默认运行时刻）"
+        value={details.queryAt ? dayjs(details.queryAt) : null}
+        onChange={(v) => setDetails({ ...details, queryAt: v ? v.format("YYYY-MM-DDTHH:mm") : "" })} />
       <Space>
         <Button type="primary" size="small" loading={submitting}
           disabled={submitting || !question.trim() || invalid || (!initial && label === "answerable" && evidence.length === 0)}
@@ -240,6 +243,7 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
   const [panelKey, setPanelKey] = useState(0);
   const [approveImport, setApproveImport] = useState(false);
   const [error, setError] = useState<ApiError>();
+  const notice = useNotice();
 
   const fail = (e: unknown) => setError(e instanceof ApiError ? e : new ApiError(0, "NETWORK", "请求失败"));
   const gate = useRef(createRequestGate());
@@ -250,19 +254,22 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
       if (!gate.current.isCurrent(g)) return;
       setCases(c);
       setDocs(d);
+      setError(undefined);
     } catch (e) {
-      fail(e);
+      if (gate.current.isCurrent(g)) fail(e);
     }
   }, [client, kbId]);
   useEffect(() => void load(), [load]);
 
-  const act = async (fn: () => Promise<unknown>) => {
-    setError(undefined);
+  /** 操作结果用浮层提示；只有列表读取失败才在页面上显示错误。 */
+  const act = async (fn: () => Promise<unknown>, done: string) => {
     try {
       await fn();
       setEditing(undefined);
+      notice.success(done);
     } catch (e) {
-      fail(e);
+      const err = e instanceof ApiError ? e : new ApiError(0, "NETWORK", "请求失败");
+      notice.error(`${err.message}（${err.code}${err.requestId ? ` · ${err.requestId}` : ""}）`, 5);
     }
     await load();
   };
@@ -270,7 +277,7 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
   const importFile = async (file: File) => {
     const text = await file.text();
     const contentType = file.name.toLowerCase().endsWith(".csv") ? "text/csv" : "application/json";
-    await act(() => client.importEvalCases(kbId, text, contentType, approveImport));
+    await act(() => client.importEvalCases(kbId, text, contentType, approveImport), `已导入 ${file.name}`);
     setPanelKey((value) => value + 1);
   };
 
@@ -287,7 +294,7 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
           </Typography.Text>
         </div>
       </div>
-      {error && <div className="scaffold-alert"><ErrorState code={error.code} message={error.message} requestId={error.requestId} /></div>}
+      {error && <div className="scaffold-alert"><ErrorState code={error.code} message={`用例读取失败：${error.message}`} requestId={error.requestId} onRetry={() => void load()} /></div>}
       {example && <Alert type="warning" showIcon className="scaffold-alert" title="当前知识库含示例评测集" description="来源以 example: 开头的用例是虚构示例，不是业务数据。" />}
       <EvalPanel client={client} kbId={kbId} cases={cases ?? []} refreshKey={panelKey} />
       <Row gutter={[16, 16]}>
@@ -295,17 +302,15 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
           <Card size="small" className="side-card" title="评测用例">
             <div className="eval-toolbar">
               <Checkbox checked={approveImport} onChange={(event) => setApproveImport(event.target.checked)}>导入后批准</Checkbox>
-              <label className="card-unit">
-                导入 JSON / CSV
-                <input aria-label="导入评测集" type="file" accept=".json,.csv,application/json,text/csv" onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (file) void importFile(file);
-                }} />
-              </label>
+              <Upload accept=".json,.csv,application/json,text/csv" showUploadList={false} beforeUpload={(file) => {
+                void importFile(file);
+                return false;
+              }}>
+                <Button size="small" aria-label="导入评测集">导入 JSON / CSV</Button>
+              </Upload>
             </div>
             {!cases ? <LoadingList /> : (
-              <CaseList cases={cases} onApprove={(c) => void act(() => client.approveEvalCase(kbId, c.id))} onEdit={setEditing} />
+              <CaseList cases={cases} onApprove={(c) => void act(() => client.approveEvalCase(kbId, c.id), "已批准，纳入下次评测")} onEdit={setEditing} />
             )}
           </Card>
         </Col>
@@ -316,13 +321,13 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
                 onSubmit={(v) => act(async () => {
                   await client.setEvalEvidence(kbId, editing.id, v.evidence);
                   await client.setEvalCaseDetails(kbId, editing.id, v.details);
-                })} />
+                }, "已保存")} />
             ) : (
               <EvidenceForm key={formKey} docs={docs} submitLabel="创建候选"
                 onSubmit={(v) => act(async () => {
                   await client.createEvalCase(kbId, { question: v.question, label: v.label, ...v.details, ...(v.evidence.length ? { evidence: v.evidence } : {}) });
                   setFormKey((value) => value + 1);
-                })} />
+                }, "已创建候选用例")} />
             )}
           </Card>
         </Col>

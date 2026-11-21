@@ -32,4 +32,24 @@ describe("documents page", () => {
     fireEvent.click(screen.getByRole("button", named("确认撤回")));
     await waitFor(() => expect(client.transition).toHaveBeenCalledWith("kb", "d", "v", "withdraw"));
   });
+
+  it("puts one primary upload button in the page header and no hidden native file input", async () => {
+    render(<LiveDocuments client={clientWith([doc])} kbId="kb" status={undefined} />);
+    const upload = await screen.findByRole("button", named("上传文档"));
+    expect(upload.classList.contains("ant-btn-primary")).toBe(true);
+    expect(upload.closest(".page-head")).toBeTruthy();
+    expect(screen.queryByLabelText("新文档标题")).toBeNull();
+    expect(document.querySelector("input[type=file][hidden]")).toBeNull();
+    fireEvent.click(upload);
+    expect(await screen.findByText("点击或拖入文件")).toBeTruthy();
+  });
+
+  it("reports action results as a toast instead of a page banner", async () => {
+    const client = clientWith([{ ...doc, versions: [{ ...doc.versions[0]!, approved: false, published: false }] }]);
+    render(<LiveDocuments client={client} kbId="kb" status={undefined} />);
+    fireEvent.click(await screen.findByRole("button", { name: /展开行|Expand row/ }));
+    fireEvent.click(await screen.findByRole("button", named("批准")));
+    expect(await screen.findByText("已批准")).toBeTruthy();
+    expect(document.querySelector(".page > .ant-alert")).toBeNull();
+  });
 });
