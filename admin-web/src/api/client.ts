@@ -26,6 +26,8 @@ export interface AuthAccount {
   username: string;
   displayName: string | null;
   roles: string[];
+  /** 管理员新建或重置后的临时密码登录：需要先改成自己的密码。 */
+  mustChangePassword?: boolean;
 }
 
 export interface TokenResponse {

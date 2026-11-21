@@ -23,11 +23,12 @@ function server(opts: { refreshOk: boolean }) {
   let issued = 0;
   let valid = "";
   let refreshOk = opts.refreshOk;
+  let refusal = "SESSION_EXPIRED";
   const fetchImpl: Fetch = async (url, init) => {
     calls.push({ url, init });
     if (url === "/api/status") return json(STATUS);
     if (url === "/api/auth/refresh") {
-      if (!refreshOk) return json({ code: "SESSION_EXPIRED", message: "x" }, 401);
+      if (!refreshOk) return json({ code: refusal, message: "x" }, 401);
       const t = token(++issued); valid = t.accessToken; return json(t);
     }
     if (url === "/api/auth/login") {
@@ -45,13 +46,13 @@ function server(opts: { refreshOk: boolean }) {
     if (url === "/api/knowledge-bases") return json([{ id: "kb1", name: "示例库" }]);
     return json({});
   };
-  return { calls, fetchImpl, expire: () => { valid = "rotated-away"; }, revoke: () => { valid = "revoked"; refreshOk = false; } };
+  return { calls, fetchImpl, expire: () => { valid = "rotated-away"; }, revoke: (code = "SESSION_REVOKED") => { valid = "revoked"; refreshOk = false; refusal = code; } };
 }
 
 function Probe() {
   const s = useSession();
   const [failure, setFailure] = useState("");
-  const attempt = (u: string, p: string) => void s.login(u, p).then((f) => setFailure(f ? `${f.message}|${f.retryAfter ?? ""}` : "ok"));
+  const attempt = (u: string, p: string) => void s.login(u, p).then((f) => setFailure(f.ok ? `ok|${f.name}` : `${f.message}|${f.retryAfter ?? ""}`));
   return (
     <div>
       <span data-testid="failure">{failure}</span>
@@ -158,10 +159,23 @@ describe("session", () => {
     api.revoke();
     fireEvent.click(screen.getByText("reload"));
     await waitFor(() => expect(screen.getByTestId("who").textContent).toBe("anonymous"));
-    expect(screen.getByTestId("lost").textContent).toBe("true");
+    expect(screen.getByTestId("lost").textContent).toBe("revoked");
     fireEvent.click(screen.getByText("good"));
+    await waitFor(() => expect(screen.getByTestId("failure").textContent).toMatch(/^ok\|/));
     await waitFor(() => expect(screen.getByTestId("lost").textContent).toBe("false"));
     fireEvent.click(screen.getByText("out"));
     expect(screen.getByTestId("lost").textContent).toBe("false");
+  });
+
+  it("tells a disabled account apart from an expired session", async () => {
+    for (const [code, reason] of [["ACCOUNT_DISABLED", "disabled"], ["SESSION_EXPIRED", "expired"]] as const) {
+      const api = server({ refreshOk: true });
+      render(<SessionProvider fetchImpl={api.fetchImpl}><Probe /></SessionProvider>);
+      await waitFor(() => expect(screen.getByTestId("kbs").textContent).toBe("示例库"));
+      api.revoke(code);
+      fireEvent.click(screen.getByText("reload"));
+      await waitFor(() => expect(screen.getByTestId("lost").textContent).toBe(reason));
+      cleanup();
+    }
   });
 });

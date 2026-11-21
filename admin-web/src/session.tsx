@@ -12,23 +12,40 @@ export interface Session {
   setKbId: (id: string) => void;
   status: Status | undefined;
   statusError: string | undefined;
-  login: (username: string, password: string) => Promise<LoginFailure | undefined>;
+  login: (username: string, password: string) => Promise<LoginResult>;
   logout: () => void;
-  /** 已登录的会话续期失败（被撤销、过期或在别处退出）后回到登录页时为 true，用来提示一次原因。 */
-  sessionLost: boolean;
+  /** 已登录的会话续期失败后回到登录页时记下原因（账号停用 / 会话被撤销 / 过期），用来提示一次。 */
+  sessionLost: SessionLost;
   acknowledgeSessionLost: () => void;
+  /** 本人改密成功后清掉「需改密」标记。 */
+  passwordChanged: () => void;
 }
+
+export type SessionLost = false | "disabled" | "revoked" | "expired";
 
 /** 登录失败：给用户看的原因；被限流时带上服务端 Retry-After 的秒数。 */
 export interface LoginFailure {
+  ok?: false;
   message: string;
   retryAfter?: number;
 }
 
+/** 登录成功时带回显示名（没有显示名时用用户名），用于欢迎提示。 */
+export interface LoginSuccess {
+  ok: true;
+  name: string;
+}
+
+export type LoginResult = LoginSuccess | LoginFailure;
+
+/** 续期失败的原因：服务端用错误码区分账号停用、会话被撤销（退出 / 踢下线）和过期。 */
+export const lostReason = (e: unknown): Exclude<SessionLost, false> =>
+  e instanceof ApiError && e.code === "ACCOUNT_DISABLED" ? "disabled" : e instanceof ApiError && e.code === "SESSION_REVOKED" ? "revoked" : "expired";
+
 const disconnected: Session = {
   client: undefined, account: undefined, restoring: false, knowledgeBases: [], kbId: undefined, setKbId: () => {},
   status: undefined, statusError: undefined, login: async () => ({ message: "未初始化" }), logout: () => {},
-  sessionLost: false, acknowledgeSessionLost: () => {},
+  sessionLost: false, acknowledgeSessionLost: () => {}, passwordChanged: () => {},
 };
 
 const SessionContext = createContext<Session>(disconnected);
@@ -57,7 +74,7 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
   const [kbId, setKbId] = useState<string>();
   const [status, setStatus] = useState<Status>();
   const [statusError, setStatusError] = useState<string>();
-  const [sessionLost, setSessionLost] = useState(false);
+  const [sessionLost, setSessionLost] = useState<SessionLost>(false);
   const token = useRef<string | undefined>(undefined);
   const inflight = useRef<Promise<string | undefined> | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -83,8 +100,8 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
 
   /** 同一时间只发一个刷新请求：多个 401 共用结果，避免轮换中的刷新令牌被重放。 */
   const renew = useCallback((): Promise<string | undefined> => {
-    inflight.current ??= auth.refresh().then((res) => { accept(res); return res.accessToken; }, () => {
-      if (token.current) setSessionLost(true);
+    inflight.current ??= auth.refresh().then((res) => { accept(res); return res.accessToken; }, (e: unknown) => {
+      if (token.current) setSessionLost(lostReason(e));
       clear();
       return undefined;
     })
@@ -115,11 +132,12 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string): Promise<LoginResult> => {
     try {
-      await start(await auth.login(username.trim(), password));
+      const res = await auth.login(username.trim(), password);
+      await start(res);
       setSessionLost(false);
-      return undefined;
+      return { ok: true, name: res.account.displayName ?? res.account.username };
     } catch (e) {
       clear();
       const failure: LoginFailure = { message: describe(e) };
@@ -134,9 +152,10 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
   }, [auth, clear]);
 
   const acknowledgeSessionLost = useCallback(() => setSessionLost(false), []);
+  const passwordChanged = useCallback(() => setAccount((a) => (a ? { ...a, mustChangePassword: false } : a)), []);
   const value = useMemo<Session>(() => ({
-    client, account, restoring, knowledgeBases, kbId, setKbId, status, statusError, login, logout, sessionLost, acknowledgeSessionLost,
-  }), [client, account, restoring, knowledgeBases, kbId, status, statusError, login, logout, sessionLost, acknowledgeSessionLost]);
+    client, account, restoring, knowledgeBases, kbId, setKbId, status, statusError, login, logout, sessionLost, acknowledgeSessionLost, passwordChanged,
+  }), [client, account, restoring, knowledgeBases, kbId, status, statusError, login, logout, sessionLost, acknowledgeSessionLost, passwordChanged]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

@@ -2,14 +2,16 @@
 import { App as AntApp } from "antd";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LoginFailure } from "../../session";
+import type { LoginResult, SessionLost } from "../../session";
 import { LoginPage } from "./LoginPage";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); document.body.innerHTML = ""; });
 
 const DEMO = { usernames: ["admin", "operator", "employee"], password: "fictional-demo" };
 
-function setup(result: () => Promise<LoginFailure | undefined>, extra: { sessionLost?: boolean; onSessionLostShown?: () => void } = {}) {
+const OK = async (): Promise<LoginResult> => ({ ok: true, name: "林知远（示例）" });
+
+function setup(result: () => Promise<LoginResult>, extra: { sessionLost?: SessionLost; onSessionLostShown?: () => void } = {}) {
   const onLogin = vi.fn(result);
   render(<AntApp><LoginPage onLogin={onLogin} onBrowseSamples={() => {}} demo={DEMO} {...extra} /></AntApp>);
   const user = screen.getByLabelText("用户名") as HTMLInputElement;
@@ -25,7 +27,7 @@ const type = (user: HTMLInputElement, password: HTMLInputElement, u: string, p: 
 
 describe("login page interactions", () => {
   it("enables the full-width button only when both fields are filled", () => {
-    const { user, password, submit } = setup(async () => undefined);
+    const { user, password, submit } = setup(OK);
     expect(submit().disabled).toBe(true);
     fireEvent.change(user, { target: { value: "admin" } });
     expect(submit().disabled).toBe(true);
@@ -60,14 +62,14 @@ describe("login page interactions", () => {
   });
 
   it("welcomes the user back after a successful login", async () => {
-    const { user, password, submit } = setup(async () => undefined);
+    const { user, password, submit } = setup(OK);
     type(user, password, "admin", "right");
     fireEvent.click(submit());
-    expect(await screen.findByText("欢迎回来，admin")).toBeTruthy();
+    expect(await screen.findByText("欢迎回来，林知远（示例）")).toBeTruthy();
   });
 
   it("reveals the password with the eye button inside the field", () => {
-    const { password } = setup(async () => undefined);
+    const { password } = setup(OK);
     const eye = screen.getByRole("button", { name: "显示密码" });
     expect(password.closest(".ant-input-affix-wrapper")?.contains(eye)).toBe(true);
     fireEvent.click(eye);
@@ -76,7 +78,7 @@ describe("login page interactions", () => {
   });
 
   it("warns when caps lock is on while typing the password", () => {
-    const { password } = setup(async () => undefined);
+    const { password } = setup(OK);
     const press = (on: boolean) => act(() => {
       const ev = new KeyboardEvent("keyup", { bubbles: true, key: "A" });
       Object.defineProperty(ev, "getModifierState", { value: (k: string) => on && k === "CapsLock" });
@@ -89,7 +91,7 @@ describe("login page interactions", () => {
   });
 
   it("fills a demo account in one click and moves focus to the button", () => {
-    const { user, password, submit } = setup(async () => undefined);
+    const { user, password, submit } = setup(OK);
     const details = document.querySelector("details.zk-demo") as HTMLDetailsElement;
     expect(details.open).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "填入演示账号 operator" }));
@@ -100,8 +102,17 @@ describe("login page interactions", () => {
 
   it("says once why the user was signed out", async () => {
     const shown = vi.fn();
-    setup(async () => undefined, { sessionLost: true, onSessionLostShown: shown });
-    await waitFor(() => expect(screen.getByText(/登录已失效/)).toBeTruthy());
+    setup(OK, { sessionLost: "revoked", onSessionLostShown: shown });
+    await waitFor(() => expect(screen.getByText(/登录已在其他地方退出或被管理员撤销/)).toBeTruthy());
     expect(shown).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells a disabled account apart from an expired login", async () => {
+    setup(OK, { sessionLost: "disabled" });
+    await waitFor(() => expect(screen.getByText(/账号已被管理员停用/)).toBeTruthy());
+    cleanup();
+    document.body.innerHTML = "";
+    setup(OK, { sessionLost: "expired" });
+    await waitFor(() => expect(screen.getByText("登录已过期，请重新登录")).toBeTruthy());
   });
 });

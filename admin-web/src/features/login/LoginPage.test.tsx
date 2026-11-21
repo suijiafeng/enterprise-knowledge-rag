@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { demoLoginAllowed, LoginPage } from "./LoginPage";
 
 describe("login page", () => {
-  const html = renderToStaticMarkup(<LoginPage onLogin={async () => undefined} onBrowseSamples={() => {}} />);
+  const html = renderToStaticMarkup(<LoginPage onLogin={async () => ({ ok: true as const, name: "x" })} onBrowseSamples={() => {}} />);
 
   it("signs in with username and password, no pasted tokens", () => {
     expect(html).toContain("用户名");
@@ -34,7 +34,7 @@ describe("login page", () => {
 
   it("lists demo accounts, collapsed, only when the server says they exist", () => {
     expect(html).not.toContain("演示账号");
-    const demo = renderToStaticMarkup(<LoginPage onLogin={async () => undefined} onBrowseSamples={() => {}}
+    const demo = renderToStaticMarkup(<LoginPage onLogin={async () => ({ ok: true as const, name: "x" })} onBrowseSamples={() => {}}
       demo={{ usernames: ["admin", "employee"], password: "fictional-demo" }} />);
     expect(demo).toContain("演示账号");
     expect(demo).toContain("仅本地开发");
