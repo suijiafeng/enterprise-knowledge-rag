@@ -178,4 +178,17 @@ describe("session", () => {
       cleanup();
     }
   });
+
+  it("explains a disabled account when the page is reopened, but stays quiet without a session", async () => {
+    const quiet = server({ refreshOk: false });
+    render(<SessionProvider fetchImpl={quiet.fetchImpl}><Probe /></SessionProvider>);
+    await waitFor(() => expect(screen.getByTestId("who").textContent).toBe("anonymous"));
+    expect(screen.getByTestId("lost").textContent).toBe("false");
+    cleanup();
+
+    const disabled = server({ refreshOk: false });
+    disabled.revoke("ACCOUNT_DISABLED");
+    render(<SessionProvider fetchImpl={disabled.fetchImpl}><Probe /></SessionProvider>);
+    await waitFor(() => expect(screen.getByTestId("lost").textContent).toBe("disabled"));
+  });
 });

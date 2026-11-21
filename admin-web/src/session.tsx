@@ -129,7 +129,11 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
   useEffect(() => {
     if (!restore) return;
     let live = true;
-    auth.refresh().then((res) => (live ? start(res) : undefined)).catch(() => undefined).finally(() => { if (live) setRestoring(false); });
+    // 打开页面时没有 cookie 或已过期是常态，不提示；cookie 还在但账号被停用或会话被撤销时，告诉用户原因。
+    auth.refresh().then((res) => (live ? start(res) : undefined)).catch((e: unknown) => {
+      const reason = lostReason(e);
+      if (live && reason !== "expired") setSessionLost(reason);
+    }).finally(() => { if (live) setRestoring(false); });
     return () => { live = false; };
   }, [auth, start, restore]);
 
