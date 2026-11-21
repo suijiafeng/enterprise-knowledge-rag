@@ -41,7 +41,7 @@ public class AccountSessions {
   /** 并发刷新（多个标签页同时恢复）的宽限期；超出后重放旧令牌视为盗用。 */
   static final Duration REUSE_GRACE = Duration.ofSeconds(30);
 
-  public record AccountView(UUID id, String username, String displayName, Set<Role> roles) {}
+  public record AccountView(UUID id, String username, String displayName, Set<Role> roles, boolean mustChangePassword) {}
 
   public record Issued(String accessToken, Instant expiresAt, AccountView account, String refreshToken, Instant refreshExpiresAt) {}
 
@@ -130,6 +130,26 @@ public class AccountSessions {
     return issue(account, row.id(), next, expires);
   }
 
+  /**
+   * 本人改密：核对当前密码，新密码须符合规则且与当前不同；成功后清除「需改密」标记并让其他设备下线，当前会话保留。
+   */
+  public void changePassword(UUID accountId, UUID sessionId, String currentPassword, String newPassword) {
+    var account = accounts.byId(accountId).filter(a -> !a.disabled()).orElseThrow(ApiException::unauthenticated);
+    if (!passwords.matches(currentPassword == null ? "" : currentPassword, account.passwordHash())) {
+      audit.record(scope(account), "PASSWORD_CHANGE", "account:" + accountId, "DENIED", Map.of());
+      throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_CURRENT_PASSWORD", "Current password is incorrect");
+    }
+    PasswordPolicy.check(account.username(), newPassword);
+    if (passwords.matches(newPassword, account.passwordHash())) throw ApiException.unprocessable("New password must differ from the current one");
+    accounts.setPassword(accountId, passwords.encode(newPassword), false);
+    int revoked = accounts.revokeOthers(accountId, sessionId);
+    audit.record(scope(account), "PASSWORD_CHANGE", "account:" + accountId, "OK", Map.of("otherSessionsRevoked", revoked));
+  }
+
+  public String encode(String password) {
+    return passwords.encode(password);
+  }
+
   /** 撤销 cookie 对应的会话，或 bearer token 所属的会话；都没有时什么也不做。 */
   public void logout(String refreshToken, Jwt bearer) {
     Optional<UUID> session = Optional.empty();
@@ -171,7 +191,7 @@ public class AccountSessions {
         .claim(JwtAccessScopeResolver.TOKEN_USE, ACCESS)
         .build();
     var token = jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
-    return new Issued(token, expires, new AccountView(a.id(), a.username(), a.displayName(), a.roles()), refresh, refreshExpires);
+    return new Issued(token, expires, new AccountView(a.id(), a.username(), a.displayName(), a.roles(), a.mustChangePassword()), refresh, refreshExpires);
   }
 
   private static AccessScope scope(AccountRepository.Account a) {
