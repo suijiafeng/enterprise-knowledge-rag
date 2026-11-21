@@ -7,19 +7,22 @@ import { AnswerText } from "./AnswerText";
 import { FeedbackBar } from "./FeedbackBar";
 import { OutcomeNote } from "./outcome";
 import { EmptyState, ErrorState, LoadingList } from "../../components/StateViews";
-import { chatReducer, createRequestGate, initialChatState, visibleCitations, type Citation } from "./chatState";
+import { chatReducer, citedSources, createRequestGate, initialChatState, visibleCitations, type Citation } from "./chatState";
+import { NoEvidenceAnswer, SupportTag } from "./NoEvidenceAnswer";
 
 const VALIDATED_NOTE = "来源信息检查通过，请核对内容";
 const HISTORY_PAGE = 2;
 
 function Sources({ citations, active }: { citations: Citation[]; active: number | undefined }) {
   if (citations.length === 0) return <Typography.Text type="secondary">选择一条回答查看来源。</Typography.Text>;
+  const cited = citedSources(citations);
+  if (cited.length === 0) return <Typography.Text type="secondary">这条回答没有引用来源。</Typography.Text>;
   return (
     <>
-      {citations.map((c, i) => (
-        <div key={`${c.versionId}-${i}`} className={active === i + 1 ? "source-card active" : "source-card"}>
+      {cited.map((c) => (
+        <div key={`${c.versionId}-${c.index}`} className={active === c.index ? "source-card active" : "source-card"}>
           <div className="source-head">
-            <span className="chunk-seq">#{i + 1}</span>
+            <span className="chunk-seq">#{c.index}</span>
             <span className="source-title">{c.title}</span>
           </div>
           <div className="chunk-text">{c.excerpt}</div>
@@ -214,7 +217,9 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
             <div key={m.id} onClick={() => setSelected(m.id)}>
               <div className="bubble-user">{m.question}</div>
               <div className={m.id === selected ? "answer-card selected" : "answer-card"}>
-                {m.status !== "complete" ? (
+                {m.status === "refused" && m.errorCode === "NO_EVIDENCE" ? (
+                  <NoEvidenceAnswer />
+                ) : m.status !== "complete" ? (
                   <OutcomeNote status={m.status} errorCode={m.errorCode} />
                 ) : m.hidden ? (
                   <Alert type="warning" showIcon title="来源已撤回或变更，这条回答已隐藏" />
@@ -223,6 +228,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
                     <AnswerText text={m.answer ?? ""} citationCount={m.citations.length} activeIndex={m.id === selected ? active : undefined} onCite={setActive} />
                     <div className="answer-foot">
                       <Tag>{VALIDATED_NOTE}</Tag>
+                      {m.support && <SupportTag support={m.support} />}
                       {m.stale && <Tag color="orange">所依据版本已不是当前生效版本</Tag>}
                     </div>
                     <FeedbackBar current={m.feedback} onSubmit={async (body) => {
@@ -251,7 +257,8 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
                 )}
                 {stream.status === "cancelled" && <Alert type="info" showIcon title="已停止生成，未完成的回答已丢弃" />}
                 {stream.status === "failed" && stream.error?.code === "ANSWER_SAVED" && <Alert type="info" showIcon title={stream.error.message} />}
-                {stream.status === "failed" && stream.error?.code !== "ANSWER_SAVED" && (
+                {stream.status === "failed" && stream.error?.code === "NO_EVIDENCE" && <NoEvidenceAnswer message={stream.error.message} />}
+                {stream.status === "failed" && stream.error?.code !== "ANSWER_SAVED" && stream.error?.code !== "NO_EVIDENCE" && (
                   <ErrorState code={stream.error?.code ?? "UNKNOWN"} message={stream.error?.message ?? "生成失败"}
                     requestId={stream.error?.requestId || undefined}
                     {...(stream.error?.retryable === false ? {} : { onRetry: () => void send(stream.question) })} />
@@ -270,7 +277,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
                 void send(question);
               }} />
             <div className="composer-foot">
-              <span>精确向量检索 · 引用元数据检查</span>
+              <span>混合检索 · 相关性门槛 · 重排 · 引用核对</span>
               <Button type="primary" disabled={!modelEnabled || running || historyLoading || !question.trim()} onClick={() => void send(question)}>发送</Button>
             </div>
           </div>

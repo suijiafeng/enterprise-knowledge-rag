@@ -30,7 +30,7 @@ export function StoredTraceView({ trace }: { trace: StoredTrace }) {
         columns={[
           { title: "排名", dataIndex: "rank", className: "mono" },
           { title: "文档", dataIndex: "documentTitle", render: (t: string | null) => t ?? "文档已删除" },
-          { title: "相似度", dataIndex: "score", className: "mono", render: (v: number) => v.toFixed(4) },
+          { title: "最终得分", dataIndex: "score", className: "mono", render: (v: number) => v.toFixed(4) },
           { title: "切块", dataIndex: "chunkId", className: "mono", render: (v: string) => v.slice(0, 8) },
         ]} />
     </>

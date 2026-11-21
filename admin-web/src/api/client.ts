@@ -138,6 +138,10 @@ export interface TraceResult {
   candidates: {
     chunkId: string; documentId: string; title: string; versionId: string; versionLabel: string; seq: number;
     heading: string | null; startOffset: number; endOffset: number; text: string; score: number; rank: number;
+    /** 余弦相似度；旧服务端不返回时取 score。 */
+    vectorScore?: number;
+    /** 问题二元组覆盖率、RRF 融合分、重排分：对应阶段未运行时为 null。 */
+    lexicalScore?: number | null; fusedScore?: number | null; rerankScore?: number | null;
   }[];
 }
 
@@ -153,6 +157,8 @@ export interface HistoryCitation {
   versionId: string;
   title: string;
   excerpt: string;
+  index?: number;
+  cited?: boolean;
 }
 
 export type FeedbackReason = "WRONG" | "MISSING" | "BAD_CITATION" | "SHOULD_REFUSE" | "OUTDATED";
@@ -247,6 +253,7 @@ export interface HistoryMessage {
   feedback: FeedbackInfo | null;
   status: TurnOutcome;
   errorCode: string | null;
+  support?: { checked: number; supported: number; weak: number[] } | null;
 }
 
 export type Role = "IT_ADMIN" | "KB_OPERATOR" | "EMPLOYEE";

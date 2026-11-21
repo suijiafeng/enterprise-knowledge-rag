@@ -1,8 +1,12 @@
 import type { TraceResult } from "../../api/client";
 import type { DebugTrace, Stage, StageKey } from "./fixtures";
 
-const KEYS: readonly StageKey[] = ["rewrite", "vector", "lexical", "fusion", "rerank", "generation"];
+const KEYS: readonly StageKey[] = ["rewrite", "vector", "lexical", "fusion", "relevance", "rerank", "generation"];
 const isKey = (k: string): k is StageKey => (KEYS as readonly string[]).includes(k);
+
+function summaryOf(result: TraceResult, key: string, fallback: string): string {
+  return result.stages.find((s) => s.key === key)?.summary ?? fallback;
+}
 
 /** 将服务端 trace 映射为页面模型。只显示服务端实际给出的分数；其余保持 null。 */
 export function traceFromResult(result: TraceResult, knowledgeBase: string, scopeVersion: string): DebugTrace {
@@ -21,19 +25,20 @@ export function traceFromResult(result: TraceResult, knowledgeBase: string, scop
       chunk: `#${String(c.seq).padStart(3, "0")}`,
       document: c.title,
       version: c.versionLabel,
-      vector: c.score,
-      lexical: null,
-      fused: null,
-      rerank: null,
+      vector: c.vectorScore ?? c.score,
+      lexical: c.lexicalScore ?? null,
+      fused: c.fusedScore ?? null,
+      rerank: c.rerankScore ?? null,
       finalRank: c.rank,
       usage: "none" as const,
     })),
     params: [
-      { label: "检索方式", value: "授权范围内精确向量检索（基线）" },
+      { label: "检索方式", value: summaryOf(result, "vector", "授权范围内向量检索") },
       { label: "Embedding 模型 / 维度", value: `${result.embeddingModel} · ${result.dimension} 维` },
-      { label: "融合", value: "未启用" },
-      { label: "重排", value: result.stages.find((s) => s.key === "rerank")?.summary ?? "未开启" },
-      { label: "最低证据门槛", value: "待校准；相似度不等于回答可信度" },
+      { label: "词法召回", value: summaryOf(result, "lexical", "未启用") },
+      { label: "融合", value: summaryOf(result, "fusion", "未启用") },
+      { label: "重排", value: summaryOf(result, "rerank", "未开启") },
+      { label: "相关性门槛", value: summaryOf(result, "relevance", "未启用") },
       { label: "查询时点", value: result.at },
     ],
   };
