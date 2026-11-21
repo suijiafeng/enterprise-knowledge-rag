@@ -128,3 +128,16 @@ describe("widget context switch", () => {
     expect(screen.getByText("报销流程")).toBeTruthy();
   });
 });
+
+describe("widget refusal", () => {
+  it("shows a no-evidence refusal as a plain answer, not an alert", async () => {
+    const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const body = sse("error", { code: "NO_EVIDENCE", message: "资料中没有足够依据回答这个问题。", requestId: "r", retryable: false, discardDraft: true });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } })));
+    render(<ZhikuWidget endpoint="/api/chat" knowledgeBaseId="kb-a" defaultOpen />);
+    fireEvent.change(screen.getByLabelText("问题"), { target: { value: "食堂几点开门" } });
+    fireEvent.click(screen.getByText("发送"));
+    expect(await screen.findByText("资料中没有足够依据回答这个问题。")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});

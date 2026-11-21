@@ -34,7 +34,7 @@ export const normalizeTheme = (color: string | undefined) =>
 type Turn = {
   id: number;
   question: string;
-  state: "running" | "complete" | "failed" | "cancelled";
+  state: "running" | "complete" | "refused" | "failed" | "cancelled";
   text: string;
   citations: Citation[];
   error?: string | undefined;
@@ -156,6 +156,9 @@ export function ZhikuWidget({
       update(id, { state: "complete", text: outcome.text, citations: outcome.citations, ...(outcome.messageId ? { messageId: outcome.messageId } : {}) });
     } else if (outcome.status === "cancelled") {
       update(id, { state: "cancelled", text: "", citations: [] });
+    } else if (outcome.error.code === "NO_EVIDENCE") {
+      // 资料不足是正常回答，不按错误显示。
+      update(id, { state: "refused", text: outcome.error.message, citations: [] });
     } else {
       update(id, { state: "failed", text: "", citations: [],
         error: `${outcome.error.message}（${outcome.error.code}）${outcome.error.retryable ? "，可稍后重新提问" : ""}` });
@@ -232,6 +235,7 @@ export function ZhikuWidget({
                       )}
                     </>
                   )}
+                  {t.state === "refused" && <div className="zhiku-refused">{t.text}</div>}
                   {t.state === "cancelled" && <div>已停止，未完成的回答已丢弃。</div>}
                   {t.state === "failed" && <div className="zhiku-error" role="alert">{t.error}</div>}
                 </div>
