@@ -47,7 +47,7 @@ public class StatusController {
     body.put("retrieval", "exact-vector");
     body.put("businessTimeZone", business.timeZone().getId());
     body.put("maxUploadBytes", ingestion.maxBytes());
-    body.put("uploadFormats", java.util.List.of(".md", ".markdown", ".txt"));
+    body.put("uploadFormats", java.util.List.of(".md", ".markdown", ".txt", ".pdf", ".docx"));
     // 只有 dev 配置写入了演示账号时才公开它们的登录信息，方便本地体验；生产永远为 null。
     body.put("demoLogin", demo ? Map.of("usernames", java.util.List.of("admin", "operator", "employee"), "password", demoPassword) : null);
     return body;

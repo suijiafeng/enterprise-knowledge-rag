@@ -4,7 +4,6 @@ import dev.zhiku.embedding.EmbeddingProvider;
 import dev.zhiku.embedding.EmbeddingVectors;
 import dev.zhiku.ingestion.IngestionRepository.ClaimedJob;
 import java.lang.management.ManagementFactory;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -93,7 +92,7 @@ public class IngestionWorker {
     }, period, period, TimeUnit.MILLISECONDS);
     try {
       var blob = repository.blob(job.versionId());
-      var chunks = chunker.chunk(new String(blob.content(), StandardCharsets.UTF_8).replaceFirst("^﻿", ""), "text/markdown".equals(blob.mediaType()));
+      var chunks = chunker.chunk(DocumentText.extract(blob.mediaType(), blob.content()), DocumentText.markdown(blob.mediaType()));
       var provider = embeddings.getIfAvailable();
       // 认领时已确认有提供方；运行中被移除按普通失败处理，任务回到队列由其他实例接手。
       if (provider == null) throw new IllegalStateException("embedding provider unavailable");
