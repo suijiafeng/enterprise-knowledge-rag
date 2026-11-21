@@ -481,29 +481,42 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly requestId: string | undefined;
+  /** 429 时服务端 Retry-After 给出的等待秒数；没有或无法解析时为 undefined。 */
+  readonly retryAfter: number | undefined;
 
-  constructor(status: number, code: string, message: string, requestId?: string) {
+  constructor(status: number, code: string, message: string, requestId?: string, retryAfter?: number) {
     super(message);
     this.status = status;
     this.code = code;
     this.requestId = requestId;
+    this.retryAfter = retryAfter;
   }
+}
+
+/** Retry-After 可以是秒数或 HTTP 日期；统一换算成向上取整的秒数，上限 1 小时。 */
+export function parseRetryAfter(value: string | null, now = Date.now()): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const seconds = /^\d+$/.test(trimmed) ? Number(trimmed) : Math.ceil((Date.parse(trimmed) - now) / 1000);
+  if (!Number.isFinite(seconds)) return undefined;
+  return Math.min(3600, Math.max(1, seconds));
 }
 
 const isStr = (v: unknown): v is string => typeof v === "string";
 
 /** 仅当响应体符合契约错误结构时才使用；其他内容均视为不可信。 */
 export async function toApiError(res: Response): Promise<ApiError> {
+  const retryAfter = res.status === 429 ? parseRetryAfter(res.headers.get("Retry-After")) : undefined;
   try {
     const body: unknown = JSON.parse((await res.text()).slice(0, 65_536));
     if (typeof body === "object" && body !== null) {
       const { code, message, requestId } = body as Record<string, unknown>;
-      if (isStr(code) && isStr(message)) return new ApiError(res.status, code, message, isStr(requestId) ? requestId : undefined);
+      if (isStr(code) && isStr(message)) return new ApiError(res.status, code, message, isStr(requestId) ? requestId : undefined, retryAfter);
     }
   } catch {
     // 回退为下方的通用错误
   }
-  return new ApiError(res.status, `HTTP_${res.status}`, "请求失败");
+  return new ApiError(res.status, `HTTP_${res.status}`, "请求失败", undefined, retryAfter);
 }
 
 /** 登录、刷新、退出：只有这三个请求带 cookie（同源），其余 API 请求一律 credentials: "omit"。 */

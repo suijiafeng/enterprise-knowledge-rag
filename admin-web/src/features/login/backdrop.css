@@ -1,0 +1,27 @@
+/* 登录页动态背景（懒加载）。整层不可交互；「减少动态效果」时定格。 */
+.zk-backdrop, .zk-backdrop * { pointer-events: none; }
+.zk-backdrop { position: fixed; inset: 0; z-index: 1; overflow: hidden; animation: zk-fade-in 0.8s ease-out both; }
+@keyframes zk-fade-in { from { opacity: 0; } }
+.zk-aurora { position: absolute; inset: -10% -10% auto -10%; height: 70%; filter: blur(54px); opacity: 0.85; mix-blend-mode: screen; }
+.zk-aurora i { position: absolute; border-radius: 50%; }
+.zk-aurora .a1 { left: 8%; top: 8%; width: 62%; height: 34%; background: linear-gradient(90deg, transparent, rgba(45, 212, 191, 0.5), rgba(56, 189, 248, 0.35), transparent); transform: rotate(-8deg); animation: zk-au1 19s ease-in-out infinite alternate; }
+.zk-aurora .a2 { left: 34%; top: 20%; width: 60%; height: 30%; background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.55), rgba(168, 85, 247, 0.35), transparent); transform: rotate(6deg); animation: zk-au2 23s ease-in-out infinite alternate; }
+.zk-aurora .a3 { left: -4%; top: 30%; width: 50%; height: 22%; background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.42), transparent); transform: rotate(-14deg); animation: zk-au3 17s ease-in-out infinite alternate; }
+@keyframes zk-au1 { to { transform: translate(9%, 6%) rotate(-2deg) scaleX(1.15); opacity: 0.7; } }
+@keyframes zk-au2 { to { transform: translate(-12%, -4%) rotate(12deg) scaleY(1.3); } }
+@keyframes zk-au3 { to { transform: translate(14%, -8%) rotate(-6deg) scaleX(1.25); opacity: 0.6; } }
+.zk-stars, .zk-const { position: absolute; inset: 0; width: 100%; height: 100%; }
+.zk-stars circle { fill: #dfe7ff; animation: zk-twinkle 5s ease-in-out infinite; }
+@keyframes zk-twinkle { 0%, 100% { opacity: 0.85; } 50% { opacity: 0.18; } }
+.zk-const .ce { stroke: rgba(150, 170, 255, 0.18); stroke-width: 1; }
+.zk-const .cf { stroke: rgba(170, 200, 255, 0.85); stroke-width: 1.2; stroke-dasharray: 0.14 1; stroke-dashoffset: 1.14; opacity: 0; animation: zk-flow 11s linear infinite; }
+@keyframes zk-flow { 0% { stroke-dashoffset: 1.14; opacity: 0; } 3% { opacity: 1; } 18% { stroke-dashoffset: 0; opacity: 1; } 21%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+.zk-const .cn circle { fill: #cfdcff; }
+.zk-const .cn .halo { fill: none; stroke: rgba(160, 185, 255, 0.5); stroke-width: 1; transform-box: fill-box; transform-origin: center; opacity: 0; animation: zk-halo 5s ease-out infinite; }
+@keyframes zk-halo { 0% { transform: scale(0.4); opacity: 0.9; } 70%, 100% { transform: scale(2.2); opacity: 0; } }
+.zk-const text { font-size: 11.5px; fill: rgba(190, 204, 240, 0.55); letter-spacing: 1px; }
+.zk-meteor { position: absolute; top: 14%; left: 62%; width: 160px; height: 1px; background: linear-gradient(90deg, rgba(255, 255, 255, 0.9), transparent); transform: rotate(-18deg); opacity: 0; animation: zk-meteor 12s ease-in 3s infinite; }
+@keyframes zk-meteor { 0% { opacity: 0; transform: translate(0, 0) rotate(-18deg); } 2% { opacity: 1; } 7% { opacity: 0; transform: translate(-320px, 104px) rotate(-18deg); } 100% { opacity: 0; } }
+@media (max-width: 900px) { .zk-const text { display: none; } }
+@media (max-width: 640px) { .zk-const, .zk-meteor { display: none; } }
+@media (prefers-reduced-motion: reduce) { .zk-backdrop, .zk-backdrop * { animation: none !important; } }

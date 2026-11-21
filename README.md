@@ -93,7 +93,7 @@ cd admin-web && npm ci && npm run dev
 | `operator` | 知识库运营 + 员工 | 上传、发布、评测 |
 | `employee` | 员工 | 只能问答；种子数据里没有授权，用来演示授权 |
 
-密码默认是 `zhiku-demo-2026`，可以用 `ZHIKU_DEMO_PASSWORD` 改。演示账号只在 `dev` 配置下写入；`prod` 配置下打开会拒绝启动。
+密码默认是 `zhiku-demo-2026`，可以用 `ZHIKU_DEMO_PASSWORD` 改。演示账号只在 `dev` 配置下写入；`prod` 配置下打开会拒绝启动。管理端只在开发构建里显示演示账号入口，生产构建即使连到误开的服务端也不显示。
 
 登录后 access token 只在页面内存里，15 分钟有效；刷新令牌是 HttpOnly cookie，页面刷新后自动恢复登录，点「退出登录」立即作废。管理端把 `/api` 代理到 `ZHIKU_DEV_PROXY`，默认 `http://127.0.0.1:8080`。
 

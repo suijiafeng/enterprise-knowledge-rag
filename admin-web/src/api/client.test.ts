@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, createClient } from "./client";
+import { ApiError, createClient, parseRetryAfter } from "./client";
 import { streamAnswer } from "./chatStream";
 import { chatReducer, initialChatState, type ChatAction } from "../features/qa/chatState";
 
@@ -33,6 +33,23 @@ describe("api client", () => {
     const err = await client.status().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ code: "HTTP_502" });
+  });
+
+  it("reads Retry-After from a 429 as whole seconds", async () => {
+    const limited = async () => new Response(JSON.stringify({ code: "RATE_LIMITED", message: "x" }), { status: 429, headers: { "Retry-After": "42" } });
+    await expect(createClient("tok", limited).status()).rejects.toMatchObject({ status: 429, code: "RATE_LIMITED", retryAfter: 42 });
+    const other = async () => new Response(JSON.stringify({ code: "FORBIDDEN", message: "x" }), { status: 403, headers: { "Retry-After": "42" } });
+    await expect(createClient("tok", other).status()).rejects.toMatchObject({ retryAfter: undefined });
+  });
+
+  it("parses Retry-After seconds and HTTP dates, and ignores junk", () => {
+    const now = Date.parse("2026-01-01T00:00:00Z");
+    expect(parseRetryAfter("7", now)).toBe(7);
+    expect(parseRetryAfter("0", now)).toBe(1);
+    expect(parseRetryAfter("Thu, 01 Jan 2026 00:00:30 GMT", now)).toBe(30);
+    expect(parseRetryAfter("99999", now)).toBe(3600);
+    expect(parseRetryAfter("soon", now)).toBeUndefined();
+    expect(parseRetryAfter(null, now)).toBeUndefined();
   });
 
   it("encodes path segments", async () => {
