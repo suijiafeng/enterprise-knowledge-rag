@@ -4,6 +4,7 @@ import static dev.zhiku.support.TestJwt.bearer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -147,6 +148,15 @@ class PipelineTest extends IntegrationTest {
     assertThat(frames.stream().map(Frame::event)).doesNotContain("draft", "validated");
     assertThat(model.lastPrompt).isEmpty();
     assertThat(debug("公司食堂几点开门").get("candidates")).isEmpty();
+
+    var conversations = json.readTree(mvc.perform(get("/api/conversations").header(HttpHeaders.AUTHORIZATION, auth()))
+        .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8));
+    var id = conversations.get(0).get("id").asText();
+    var history = json.readTree(mvc.perform(get("/api/conversations/{id}/messages", id).header(HttpHeaders.AUTHORIZATION, auth()))
+        .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8));
+    var refused = history.get(history.size() - 1);
+    assertThat(refused.get("errorCode").asText()).isEqualTo("NO_EVIDENCE");
+    assertThat(refused.get("reason").asText()).isEqualTo(last.data().get("message").asText());
   }
 
   @Test

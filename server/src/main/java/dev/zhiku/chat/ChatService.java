@@ -565,9 +565,12 @@ public class ChatService {
     var ownSourcesOk = new HashMap<UUID, Boolean>();
     sourcesByMessage.forEach((id, sources) -> ownSourcesOk.put(id, sources.stream().allMatch(s ->
         SourceAvailability.usable(s.documentId(), s.withdrawn(), s.chunkText(), s.kbId(), conversation.kbId()))));
+    var refusal = noEvidence(configs.effective(conversation.kbId()));
     return repository.messages(conversationId).stream().map(m -> {
       if (!"complete".equals(m.status())) {
-        return new MessageView(m.id(), m.question(), null, false, null, false, List.of(), m.createdAt(), null, m.status(), m.errorCode());
+        // 资料不足的历史轮次用与实时回答相同的文案（含当前人工渠道），reason 即展示文本。
+        var reason = "NO_EVIDENCE".equals(m.errorCode()) ? refusal : null;
+        return new MessageView(m.id(), m.question(), null, false, reason, false, List.of(), m.createdAt(), null, m.status(), m.errorCode());
       }
       var sources = sourcesByMessage.getOrDefault(m.id(), List.of());
       // 只有当回答自身的来源以及生成它所依据的每个较早轮次的来源都可用时，该回答才可用。
