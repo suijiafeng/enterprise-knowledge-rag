@@ -29,6 +29,8 @@ zhiku:
     # 业务日期（生效 from/until）按此时区解释；存储使用 UTC。
     time-zone: Asia/Shanghai
   document:
+    # 发布前是否必须先由有权限的人「批准」。默认关闭：发布即由发布人批准，上传后一步发布。
+    require-approval: ${ZHIKU_REQUIRE_APPROVAL:false}
     # 文档删除后在后台移除内容、chunk 和向量（读取立即停止）。
     cleanup-enabled: true
     cleanup-poll-interval: PT10S
