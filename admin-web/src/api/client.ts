@@ -292,6 +292,17 @@ export interface RolePolicy {
   rules: Record<Role, Record<KbAction, Rule>>;
 }
 
+/** 本企业的登录账号（IT 管理员可见）。 */
+export interface AccountInfo {
+  id: string;
+  username: string;
+  displayName: string | null;
+  roles: Role[];
+  disabled: boolean;
+  activeSessions: number;
+  mustChangePassword: boolean;
+}
+
 export interface Me {
   userId: string;
   enterpriseId: string;
@@ -609,6 +620,14 @@ export function createClient(token: string | TokenSource | undefined, fetchImpl:
     evalRun: (kbId: string, runId: string) => request<EvalRun>(`${kb(kbId)}/eval-runs/${e(runId)}`),
     latestRun: (kbId: string) => request<EvalRun | undefined>(`${kb(kbId)}/eval-runs/latest`),
     me: () => request<Me>("/api/me"),
+    accounts: () => request<AccountInfo[]>("/api/admin/accounts"),
+    createAccount: (body: { username: string; displayName?: string; roles: Role[] }) =>
+      request<{ id: string; username: string; temporaryPassword: string }>("/api/admin/accounts", post(body)),
+    updateAccount: (id: string, body: { roles?: Role[]; disabled?: boolean }) =>
+      request<void>(`/api/admin/accounts/${e(id)}`, { ...post(body), method: "PATCH" }),
+    resetPassword: (id: string) => request<{ temporaryPassword: string }>(`/api/admin/accounts/${e(id)}/password`, { method: "POST" }),
+    revokeSessions: (id: string) => request<void>(`/api/admin/accounts/${e(id)}/sessions`, { method: "DELETE" }),
+    changePassword: (currentPassword: string, newPassword: string) => request<void>("/api/auth/password", post({ currentPassword, newPassword })),
     rolePolicy: () => request<RolePolicy>("/api/policy/roles"),
     adminKnowledgeBases: () => request<AdminKnowledgeBase[]>("/api/admin/knowledge-bases"),
     users: (q: string) => request<DirectoryUser[]>(`/api/admin/users?q=${e(q)}&limit=20`),
