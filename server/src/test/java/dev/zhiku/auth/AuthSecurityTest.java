@@ -190,6 +190,28 @@ class AuthSecurityTest extends IntegrationTest {
   }
 
   @Test
+  void refreshTellsADisabledAccountARevokedSessionAndAnExpiredOneApart() throws Exception {
+    var admin = account(enterprise, Role.IT_ADMIN);
+    var adminToken = signIn(admin).access();
+    var expired = signIn(account(enterprise, Role.EMPLOYEE));
+    jdbc.update("UPDATE auth_session SET expires_at = now() - interval '1 minute' WHERE refresh_hash = ?", AccountSessions.hash(expired.refresh()));
+    assertThat(refresh(expired.refresh()).getResponse().getContentAsString()).contains("SESSION_EXPIRED");
+
+    var kicked = account(enterprise, Role.EMPLOYEE);
+    var kickedSession = signIn(kicked);
+    mvc.perform(as(delete("/api/admin/accounts/{id}/sessions", kicked), adminToken)).andExpect(status().isNoContent());
+    assertThat(refresh(kickedSession.refresh()).getResponse().getContentAsString()).contains("SESSION_REVOKED");
+
+    var disabled = account(enterprise, Role.EMPLOYEE);
+    var disabledSession = signIn(disabled);
+    mvc.perform(as(patch("/api/admin/accounts/{id}", disabled), adminToken).contentType("application/json").content("{\"disabled\":true}"))
+        .andExpect(status().isNoContent());
+    var refused = refresh(disabledSession.refresh());
+    assertThat(refused.getResponse().getStatus()).isEqualTo(401);
+    assertThat(refused.getResponse().getContentAsString()).contains("ACCOUNT_DISABLED");
+  }
+
+  @Test
   void accountAdministrationStaysInsideTheEnterpriseAndNeverTargetsYourself() throws Exception {
     var admin = account(enterprise, Role.IT_ADMIN);
     var foreign = account(otherEnterprise, Role.EMPLOYEE);

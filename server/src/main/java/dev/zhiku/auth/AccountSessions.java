@@ -78,6 +78,15 @@ public class AccountSessions {
     return new ApiException(HttpStatus.UNAUTHORIZED, "SESSION_EXPIRED", "Session expired, sign in again");
   }
 
+  /** 会话被退出、被管理员踢下线或因刷新令牌重放被撤销。只有持有过该会话刷新令牌的一方能看到这个区别。 */
+  static ApiException revokedSession() {
+    return new ApiException(HttpStatus.UNAUTHORIZED, "SESSION_REVOKED", "Session was signed out, sign in again");
+  }
+
+  static ApiException accountDisabled() {
+    return new ApiException(HttpStatus.UNAUTHORIZED, "ACCOUNT_DISABLED", "Account is disabled, contact your IT administrator");
+  }
+
   public static String normalize(String username) {
     return username == null ? "" : username.strip().toLowerCase(java.util.Locale.ROOT);
   }
@@ -101,14 +110,16 @@ public class AccountSessions {
     var presented = hash(refreshToken);
     var row = accounts.sessionByHash(presented).orElseThrow(AccountSessions::invalidSession);
     var account = accounts.byId(row.accountId()).orElseThrow(AccountSessions::invalidSession);
-    if (row.revokedAt() != null || row.expiresAt().isBefore(Instant.now()) || account.disabled()) throw invalidSession();
+    if (account.disabled()) throw accountDisabled();
+    if (row.revokedAt() != null) throw revokedSession();
+    if (row.expiresAt().isBefore(Instant.now())) throw invalidSession();
     if (!row.current()) {
       if (row.rotatedAt() != null && row.rotatedAt().isAfter(Instant.now().minus(REUSE_GRACE))) {
         return issue(account, row.id(), null, row.expiresAt());
       }
       accounts.revoke(row.id());
       audit.record(scope(account), "REFRESH_REUSE", "session:" + row.id(), "REVOKED", Map.of());
-      throw invalidSession();
+      throw revokedSession();
     }
     var next = randomToken();
     var expires = Instant.now().plus(settings.refreshTtl());
