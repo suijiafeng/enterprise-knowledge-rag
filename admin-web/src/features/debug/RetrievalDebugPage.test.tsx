@@ -7,8 +7,8 @@ const trace = debugFixture;
 const html = renderToStaticMarkup(<RetrievalDebugPage trace={trace} />);
 
 describe("retrieval debug page", () => {
-  it("shows the six PRD stages in order", () => {
-    const names = ["查询改写", "向量召回", "词法召回", "融合排序", "重排", "上下文与生成"];
+  it("shows the current retrieval stages in order", () => {
+    const names = ["查询改写", "向量召回", "词法召回", "融合排序", "相关性筛选", "重排", "上下文与生成"];
     expect(trace.stages.map((s) => s.name)).toEqual(names);
     let last = -1;
     for (const n of names) {

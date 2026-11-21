@@ -17,7 +17,8 @@ describe("admin shell", () => {
     expect(html).not.toContain("生产环境");
     expect(html).toContain("示例数据");
     expect(html).toContain("尚未接入生产服务");
-    expect(html).toContain("metadata-only");
+    expect(html).toContain("请结合原文判断回答是否准确");
+    expect(html).not.toContain("metadata-only");
   });
 
   it("does not render controls that have no action", () => {

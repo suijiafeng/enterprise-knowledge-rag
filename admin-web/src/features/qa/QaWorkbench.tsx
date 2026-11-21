@@ -85,14 +85,14 @@ export function QaWorkbench({ data }: { data: QaData }) {
                 <div className="answer-head">
                   <div>
                     <div className="answer-name">知库助手</div>
-                    <div className="answer-meta">模型未接入，检索未接入</div>
+                    <div className="answer-meta">示例回答</div>
                   </div>
                 </div>
                 <AnswerText text={data.sample.answer} citationCount={data.sample.citations.length} activeIndex={active} onCite={setActive} />
                 <CitationChips citations={data.sample.citations} />
                 <div className="answer-foot">
                   <Tag>{VALIDATED_NOTE}</Tag>
-                  <span>耗时：未接入</span>
+                  <span>离线示例</span>
                 </div>
               </div>
             </>
@@ -101,10 +101,10 @@ export function QaWorkbench({ data }: { data: QaData }) {
           )}
 
           <div className="state-label">
-            离线回放 · 按草案 SSE 契约逐条回放示例事件，不调用任何服务
+            离线回放 · 点选示例问题，体验回答逐步生成
           </div>
           <div className="replay-card">
-            {stream.status === "idle" && <Button onClick={replay}>▶ 回放流式示例</Button>}
+            {stream.status === "idle" && <Button shape="round" aria-label={`体验示例问题：${data.sample.question}`} onClick={replay}>{data.sample.question}</Button>}
             {running && (
               <>
                 <p className="answer-text">{stream.text || "正在生成回答…"}<span className="caret" aria-hidden="true" /></p>
@@ -128,7 +128,7 @@ export function QaWorkbench({ data }: { data: QaData }) {
           </div>
 
           <Typography.Paragraph type="secondary" className="page-sub">
-            问答服务未接入。示例模式只回放上面的离线事件，不能发送问题。登录后可以问：{data.quickQuestions.join("、")}。
+            问答服务未接入此离线示例。登录后可在工作台输入问题，例如：{data.quickQuestions.join("、")}。
           </Typography.Paragraph>
         </Card>
 

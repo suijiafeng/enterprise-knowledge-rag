@@ -29,8 +29,10 @@ describe("qa workbench", () => {
     expect(html).toContain("来源信息检查通过，请核对内容");
   });
 
-  it("labels the streaming demo as an offline replay", () => {
+  it("offers an offline replay for the actual preset question", () => {
     expect(html).toContain("离线回放");
+    expect(html).toContain(`aria-label="体验示例问题：${qaFixture.sample.question}"`);
+    expect(html).not.toContain("SSE 契约");
   });
 });
 

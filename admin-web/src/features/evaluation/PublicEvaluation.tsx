@@ -2,7 +2,7 @@ import { Alert, Card, Table, Tag, Typography } from "antd";
 import type { EvalRun } from "../../api/client";
 import { MetricStrip } from "../../components/MetricStrip";
 import { metricCards } from "./LiveEvaluation";
-import { decimal, metricRows, parameterRows, ratioText } from "./evalPanel";
+import { decimal, metricRows, parameterRows, ratioText } from "./evaluationPanelUtils";
 
 export interface ExampleSnapshot {
   example: true;

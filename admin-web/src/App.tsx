@@ -75,7 +75,7 @@ export function DevBanner({ connected }: { connected: boolean }) {
     <div className="dev-banner" role="note">
       <span className="dev-dot" aria-hidden="true" />
       <span>
-        开发环境，尚未接入生产服务 · {connected ? "本地数据" : "示例数据"} · 回答的 validated 只是 metadata-only 来源检查，不代表回答正确
+        尚未接入生产服务 · {connected ? "本地数据" : "示例数据"} · 系统核对引用的来源信息，请结合原文判断回答是否准确
       </span>
       <Button type="text" size="small" className="dev-banner-close" aria-label="关闭提示" onClick={() => setOpen(false)}>×</Button>
     </div>

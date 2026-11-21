@@ -12,7 +12,8 @@ describe("console shell", () => {
     render(<DevBanner connected />);
     const note = screen.getByRole("note");
     expect(note.textContent).toContain("尚未接入生产服务");
-    expect(note.textContent).toContain("metadata-only");
+    expect(note.textContent).toContain("请结合原文判断回答是否准确");
+    expect(note.textContent).not.toContain("metadata-only");
     expect(document.querySelector(".ant-alert")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "关闭提示" }));
     expect(screen.queryByRole("note")).toBeNull();
