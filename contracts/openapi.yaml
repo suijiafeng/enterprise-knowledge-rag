@@ -2,7 +2,12 @@ openapi: 3.1.0
 info:
   title: 知库 scaffold API
   version: 0.1.0-draft
-  description: PRD v0.3. Bearer JWT (HS256, locally issued for development) on every /api path except status. SSE schemas are provisional.
+  description: >-
+    PRD v0.3. Bearer JWT (HS256) on every /api path except status, health and /api/auth/*. Production accepts only access
+    tokens issued by POST /api/auth/login (bound to a login session via the sid claim; checked against the database on every
+    request, so logout, disable and session revocation take effect immediately and roles are the intersection of the token
+    and the account). Unbound tokens (scripts/dev-token.mjs) are accepted only with the dev profile. Login, refresh, chat,
+    upload and evaluation are rate limited (429 RATE_LIMITED with Retry-After). SSE schemas are provisional.
 servers:
   - url: http://127.0.0.1:8080
 security:
@@ -31,6 +36,109 @@ paths:
                   businessTimeZone: {type: string}
                   maxUploadBytes: {type: integer}
                   uploadFormats: {type: array, items: {type: string}}
+                  demoLogin:
+                    description: Only when the dev profile seeded demo accounts; always null in production.
+                    type: [object, 'null']
+                    properties:
+                      usernames: {type: array, items: {type: string}}
+                      password: {type: string}
+  /api/health:
+    get:
+      operationId: getHealth
+      security: []
+      description: Readiness. Runs SELECT 1 with a 2 s timeout; no connection details in the body.
+      responses:
+        '200':
+          description: Database reachable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [UP]}
+                  database: {type: string, enum: [UP]}
+        '503': {description: 'Database unreachable ({status: DOWN, database: DOWN})'}
+  /api/auth/login:
+    post:
+      operationId: login
+      security: []
+      description: >-
+        Username (case-insensitive) and password. Returns a short-lived access token in the body and sets the refresh token
+        as an HttpOnly, SameSite=Strict cookie (zhiku_refresh, Path=/api/auth, Secure outside the dev profile). Wrong
+        password, unknown user and disabled account all return the same 401 INVALID_CREDENTIALS. Rate limited per source
+        address and per username.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: {type: string, maxLength: 64}
+                password: {type: string, maxLength: 200}
+      responses:
+        '200': {$ref: '#/components/responses/Token'}
+        '401': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /api/auth/refresh:
+    post:
+      operationId: refreshToken
+      security: []
+      description: >-
+        Uses the zhiku_refresh cookie; rotates it (new Set-Cookie) and returns a new access token with the account's current
+        roles. Replaying the previous refresh token within 30 s (concurrent tabs) returns an access token without a new
+        cookie; replaying it later revokes the whole session. 401 SESSION_EXPIRED when the session is revoked, expired or the
+        account is disabled.
+      responses:
+        '200': {$ref: '#/components/responses/Token'}
+        '401': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /api/auth/logout:
+    post:
+      operationId: logout
+      security: []
+      description: >-
+        Revokes the session of the zhiku_refresh cookie (or of a valid bearer token) and clears the cookie. Access tokens and
+        widget tokens of that session stop working immediately. Always 204.
+      responses:
+        '204': {description: Logged out}
+  /api/admin/accounts:
+    get:
+      operationId: listAccounts
+      description: IT_ADMIN only. Login accounts of the caller's enterprise (no password hashes) with active session counts.
+      responses:
+        '200': {description: Accounts}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/admin/accounts/{accountId}:
+    patch:
+      operationId: updateAccount
+      description: >-
+        IT_ADMIN of the same enterprise; not the caller's own account (422). roles replaces the role set and applies to
+        already issued tokens on their next request; disabled=true also revokes every session.
+      parameters: [{name: accountId, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roles: {type: array, items: {type: string, enum: [IT_ADMIN, KB_OPERATOR, EMPLOYEE]}}
+                disabled: {type: boolean}
+      responses:
+        '204': {description: Updated}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/admin/accounts/{accountId}/sessions:
+    delete:
+      operationId: revokeAccountSessions
+      description: IT_ADMIN of the same enterprise. Signs the account out everywhere (all sessions, their access and widget tokens).
+      parameters: [{name: accountId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '204': {description: Revoked}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /api/chat:
     post:
       operationId: chat
@@ -849,6 +957,35 @@ components:
   securitySchemes:
     bearer: {type: http, scheme: bearer, bearerFormat: JWT}
   responses:
+    Token:
+      description: Access token (also sets or keeps the zhiku_refresh cookie)
+      headers:
+        Set-Cookie: {schema: {type: string}, description: 'zhiku_refresh=...; HttpOnly; SameSite=Strict; Path=/api/auth'}
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [accessToken, tokenType, expiresAt, account]
+            properties:
+              accessToken: {type: string}
+              tokenType: {type: string, const: Bearer}
+              expiresAt: {type: string, format: date-time}
+              account:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+                  username: {type: string}
+                  displayName: {type: [string, 'null']}
+                  roles: {type: array, items: {type: string}}
+    RateLimited:
+      description: Too many requests from this address or user
+      headers:
+        Retry-After: {schema: {type: integer}, description: Seconds}
+        X-Request-Id: {schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {code: RATE_LIMITED, message: 'Too many requests, retry later', requestId: 00000000-0000-0000-0000-000000000000}
     Error:
       description: Contract error body
       headers:
