@@ -1,3 +1,6 @@
+# 一条命令启动本地演示：docker compose up -d --build
+# postgres（pgvector）+ server（Spring Boot）+ admin-web（nginx 托管并反代 /api），可选 seed 写入示例知识库与授权。
+# 只需在 .env 里填 POSTGRES_PASSWORD 和 ZHIKU_JWT_SECRET（见 .env.example），端口只绑定本机。
 services:
   postgres:
     image: pgvector/pgvector:0.8.0-pg16
@@ -5,7 +8,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-zhiku}
       POSTGRES_USER: ${POSTGRES_USER:-zhiku_local}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a local password in .env}
-    ports: ["127.0.0.1:5432:5432"]
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
     volumes:
       - zhiku_postgres:/var/lib/postgresql/data
     healthcheck:
@@ -13,5 +16,53 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  server:
+    build: ./server
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      # 默认 dev：写入演示账号、本地 http 下可用的刷新 cookie。共享或生产环境请改为 prod 并走 HTTPS。
+      SPRING_PROFILES_ACTIVE: ${ZHIKU_PROFILE:-dev}
+      ZHIKU_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-zhiku}
+      POSTGRES_USER: ${POSTGRES_USER:-zhiku_local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a local password in .env}
+      ZHIKU_JWT_SECRET: ${ZHIKU_JWT_SECRET:?Set ZHIKU_JWT_SECRET in .env (openssl rand -base64 48)}
+      ZHIKU_DEMO_PASSWORD: ${ZHIKU_DEMO_PASSWORD:-zhiku-demo-2026}
+      # 容器里默认用内置 mock 模型（无需 Ollama、不产生费用）。接本机 Ollama：provider 设为 ollama，URL 用 http://host.docker.internal:11434。
+      ZHIKU_EMBEDDING_PROVIDER: ${ZHIKU_COMPOSE_EMBEDDING_PROVIDER:-mock}
+      ZHIKU_EMBEDDING_MODEL: ${ZHIKU_COMPOSE_EMBEDDING_MODEL:-mock:bigram-256}
+      ZHIKU_CHAT_PROVIDER: ${ZHIKU_COMPOSE_CHAT_PROVIDER:-mock}
+      ZHIKU_CHAT_MODEL: ${ZHIKU_COMPOSE_CHAT_MODEL:-mock:extractive}
+      ZHIKU_OLLAMA_URL: ${ZHIKU_COMPOSE_OLLAMA_URL:-http://host.docker.internal:11434}
+      ZHIKU_RETRIEVAL_MIN_SCORE: ${ZHIKU_COMPOSE_MIN_SCORE:-0.3}
+      ZHIKU_REQUIRE_APPROVAL: ${ZHIKU_REQUIRE_APPROVAL:-false}
+      ZHIKU_RATE_LIMIT_STORE: ${ZHIKU_RATE_LIMIT_STORE:-memory}
+      # 只信任 admin-web（nginx）写入的 X-Forwarded-For，限流才能按真实来源 IP 计数。
+      SERVER_FORWARD_HEADERS_STRATEGY: native
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["127.0.0.1:${ZHIKU_SERVER_PORT:-8080}:8080"]
+
+  admin-web:
+    build:
+      context: ./admin-web
+      args:
+        VITE_ZHIKU_DEMO_LOGIN: ${ZHIKU_COMPOSE_DEMO_LOGIN:-true}
+    depends_on:
+      server: {condition: service_healthy}
+    ports: ["127.0.0.1:${ZHIKU_WEB_PORT:-5180}:80"]
+
+  # 一次性：写入示例知识库、授权与用户目录（可重复执行）。不需要时：docker compose up -d --build --scale seed=0
+  seed:
+    image: pgvector/pgvector:0.8.0-pg16
+    depends_on:
+      server: {condition: service_healthy}
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set a local password in .env}
+    volumes:
+      - ./scripts/dev-seed.sql:/seed.sql:ro
+    command: ["psql", "-h", "postgres", "-U", "${POSTGRES_USER:-zhiku_local}", "-d", "${POSTGRES_DB:-zhiku}", "-v", "ON_ERROR_STOP=1", "-q", "-f", "/seed.sql"]
+    restart: "no"
+
 volumes:
   zhiku_postgres:
