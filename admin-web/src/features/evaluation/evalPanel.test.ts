@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EvalResult, EvalRun } from "../../api/client";
-import { highlightChunk, isLowSample, metricRows, parameterRows } from "./evalPanel";
+import { highlightChunk, isLowSample, metricRows, parameterRows } from "./evaluationPanelUtils";
 
 const result = (patch: Partial<EvalResult>): EvalResult => ({
   caseId: "c", question: "年假几天", label: "answerable", mappingFailed: false, hit: true, evidenceHit: 1, evidenceTotal: 1, latencyMs: 10, ...patch,

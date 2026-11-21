@@ -6,7 +6,7 @@ import { MetricStrip } from "../../components/MetricStrip";
 import { EmptyState, ErrorState } from "../../components/StateViews";
 import { formatInstant } from "../../format";
 import { metricCards } from "./LiveEvaluation";
-import { DEFINITIONS, barValue, decimal, highlightChunk, isLowSample, latencyRows, metricRows, parameterRows, ratioText } from "./evalPanel";
+import { DEFINITIONS, barValue, decimal, highlightChunk, isLowSample, latencyRows, metricRows, parameterRows, ratioText } from "./evaluationPanelUtils";
 
 const JUDGE: Record<string, string> = { llm: "LLM 评审", simulated: "模拟评审（词面）" };
 const CITATION: Record<string, string> = { ok: "引用编号可核对", none: "没有引用编号", "out-of-range": "引用编号越界" };
