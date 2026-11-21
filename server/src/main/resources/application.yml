@@ -102,7 +102,28 @@ zhiku:
     # 合格 chunk 数达到该值时改走 HNSW 近似检索（V27 为 256/768/1024/1536 维建了索引），否则精确检索。
     ann-min-chunks: ${ZHIKU_RETRIEVAL_ANN_MIN_CHUNKS:5000}
   auth:
-    # 本地签发 token 的 HS256 密钥；至少 32 字节。为空表示拒绝所有 token。
+    # 签发与校验 token 的 HS256 密钥，至少 32 字节的随机值；缺少或像占位值时拒绝启动（StartupGuard）。
     jwt-secret: ${ZHIKU_JWT_SECRET:}
     issuer: zhiku-local
     audience: zhiku-api
+    # 登录签发的 access token 有效期；过期后页面用 HttpOnly 刷新 cookie 静默续期。
+    access-ttl: PT15M
+    refresh-ttl: P7D
+    # 是否接受不绑定登录会话的令牌（scripts/dev-token.mjs）。只在 dev 配置里打开，prod 配置下打开会拒绝启动。
+    dev-tokens: false
+    # 刷新 cookie 的 Secure 属性；本地 http 开发在 dev 配置里关闭。
+    cookie-secure: true
+  demo:
+    # 演示账号（admin / operator / employee）。只在 dev 配置里打开。
+    accounts: false
+  rate-limit:
+    enabled: true
+    # 每个来源 IP 的登录尝试
+    login: {limit: 10, window: PT1M}
+    # 每个用户名的登录尝试（分散 IP 猜同一账号）
+    login-account: {limit: 20, window: PT15M}
+    refresh: {limit: 30, window: PT1M}
+    # 以下按登录用户计
+    chat: {limit: 30, window: PT1M}
+    upload: {limit: 20, window: PT1M}
+    evaluation: {limit: 10, window: PT1M}

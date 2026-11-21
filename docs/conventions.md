@@ -22,3 +22,9 @@ POST + fetch SSE：start → draft → validated → done；error 为终止失�
 - 弹窗和抽屉的关闭图标统一在右上角，主操作按钮在右下角；页面级主操作放在标题行右侧。
 - 每个导航页是 `src/routes/` 下的独立懒加载模块；`App.tsx` 不要直接引入页面组件或 `pageFor`，否则会把所有页面打回首包。
 - 授权列表里的姓名、邮箱、部门来自 `directory_user`（身份提供方的本地镜像，开发环境由 `scripts/dev-seed.sql` 填充），目录里没有的用户显示「未同步到目录」和用户 ID。
+
+## 配置与环境
+
+- `dev` 配置（`SPRING_PROFILES_ACTIVE=dev`）：演示账号、开发令牌、非 Secure 的刷新 cookie。只用于本机。
+- `prod` 配置：`StartupGuard` 要求 JWT 密钥 ≥ 32 字节且不像占位值、数据库密码已配置、开发令牌和演示账号关闭、cookie 为 Secure、限流开启、CORS 不含 `*`；任何一条不满足就拒绝启动。
+- 新增需要限流的接口时，在 `RateLimitFilter` 的路由表里登记，并在 `application.yml` 的 `zhiku.rate-limit` 下给出默认上限。

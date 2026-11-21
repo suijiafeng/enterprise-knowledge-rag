@@ -14,7 +14,11 @@
 - HTTP 冒烟：公开状态端点、匿名 GET/POST（含 CSRF）401、已认证 GET/POST 403、未知路径与业务路径响应一致。
 
 ## 已接入（2026-10-14）
-- `SecurityConfiguration`：JWT 资源服务器，校验签名、iss、aud、必需 exp；密钥缺失时拒绝所有令牌；无状态、无 Cookie，因此关闭 CSRF；不开放 CORS。
+- `SecurityConfiguration`：JWT 资源服务器，校验签名、iss、aud、必需 exp，以及会话绑定（`sid`）：会话必须未撤销、账号未停用。不绑定会话的令牌只在 `dev` 配置接受。密钥缺失或过短时 `StartupGuard` 拒绝启动。业务接口只认 bearer，关闭 CSRF；唯一的 cookie 是 `/api/auth` 下 HttpOnly + SameSite=Strict 的刷新令牌。不为管理端开放 CORS。
+- `AccountSessions` / `AuthController`：用户名密码登录（bcrypt，未知用户也做同等代价比对），access token 15 分钟，刷新令牌 7 天、每次刷新轮换；旧令牌 30 秒后重放视为盗用并撤销整个会话。退出撤销会话，access token 和由它签发的 widget token 立即失效。
+- 角色：绑定会话的令牌，角色取令牌与账号当前角色的交集，降权下一请求生效；`/api/admin/accounts` 供 IT 管理员改角色、停用、踢下线（不能改自己）。
+- 限流（`RateLimitFilter`，单实例内存固定窗口）：登录按来源 IP 和用户名，刷新按 IP，问答、上传、评测按用户；超限 429 `RATE_LIMITED` + `Retry-After`。多实例部署应在网关统一限流。
+- 安全响应头：CSP `default-src 'none'; frame-ancestors 'none'`、`X-Frame-Options: DENY`、`nosniff`、`Referrer-Policy: no-referrer`、`Permissions-Policy`、COOP；HTTPS 下 HSTS。
 - `JwtAccessScopeResolver`：身份只取自已验证令牌；授权库每请求从 `kb_grant` 重读，撤权下一请求生效。
 - 接口：`GET/POST /api/knowledge-bases`、`PUT/DELETE /api/knowledge-bases/{kb}/grants/{user}`（仅同企业 IT_ADMIN），授权变更写入追加式 `audit_event`。
 - 集成测试（真实 pgvector）：无效签名/过期/错误 audience/缺 exp/非法 sub 一律 401；授权与撤权即时生效；请求体伪造 enterpriseId 被忽略；跨企业与不存在的库响应一致；审计不可更新。

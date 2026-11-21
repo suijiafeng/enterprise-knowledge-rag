@@ -68,9 +68,12 @@ class WidgetTokenController {
         .claim("enterprise_id", scope.enterpriseId().toString())
         .claim("roles", List.of(Role.EMPLOYEE.name()))
         .claim(JwtAccessScopeResolver.KB_SCOPE, List.of(request.kbId().toString()))
-        .claim(JwtAccessScopeResolver.TOKEN_USE, JwtAccessScopeResolver.WIDGET)
-        .build();
-    var token = jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
+        .claim(JwtAccessScopeResolver.TOKEN_USE, JwtAccessScopeResolver.WIDGET);
+    // 继承签发者的登录会话：退出、停用或踢下线时，已发出的 widget token 一并失效。
+    if (SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken t && t.getToken().hasClaim(AccountSessions.SESSION)) {
+      claims.claim(AccountSessions.SESSION, t.getToken().getClaimAsString(AccountSessions.SESSION));
+    }
+    var token = jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims.build())).getTokenValue();
     audit.record(scope, "WIDGET_TOKEN_ISSUE", "kb:" + request.kbId(), "OK", Map.of("ttlSeconds", ttl.toSeconds()));
     return new WidgetToken(token, expires);
   }

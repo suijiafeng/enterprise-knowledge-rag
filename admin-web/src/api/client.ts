@@ -1,6 +1,6 @@
 /**
- * 服务端 API 适配层（contracts/openapi.yaml）。bearer token 只在页面会话期间保存在内存中；
- * 不写入 localStorage、sessionStorage 或 cookie。
+ * 服务端 API 适配层（contracts/openapi.yaml）。access token 只在页面内存中保存，不写入 localStorage 或 sessionStorage；
+ * 刷新令牌是服务端设置的 HttpOnly cookie（路径 /api/auth），页面脚本读不到。
  */
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -15,6 +15,28 @@ export interface Status {
   businessTimeZone: string;
   maxUploadBytes: number;
   uploadFormats: string[];
+  /** 仅 dev 配置写入演示账号时存在。 */
+  demoLogin?: { usernames: string[]; password: string } | null;
+}
+
+export interface AuthAccount {
+  id: string;
+  username: string;
+  displayName: string | null;
+  roles: string[];
+}
+
+export interface TokenResponse {
+  accessToken: string;
+  tokenType: "Bearer";
+  expiresAt: string;
+  account: AuthAccount;
+}
+
+/** 当前 access token；遇到 401 时 refresh 用刷新 cookie 换一个新的，换不到返回 undefined。 */
+export interface TokenSource {
+  current: () => string | undefined;
+  refresh: () => Promise<string | undefined>;
 }
 
 export interface KnowledgeBase {
@@ -484,11 +506,37 @@ export async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, `HTTP_${res.status}`, "请求失败");
 }
 
-export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i) => fetch(u, i)) {
-  const raw = (path: string, init: RequestInit = {}) => {
+/** 登录、刷新、退出：只有这三个请求带 cookie（同源），其余 API 请求一律 credentials: "omit"。 */
+export function createAuthApi(fetchImpl: Fetch = (u, i) => fetch(u, i)) {
+  const call = async <T,>(path: string, body?: unknown): Promise<T> => {
+    const res = await fetchImpl(path, {
+      method: "POST", credentials: "same-origin", cache: "no-store",
+      ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    });
+    if (!res.ok) throw await toApiError(res);
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
+  };
+  return {
+    login: (username: string, password: string) => call<TokenResponse>("/api/auth/login", { username, password }),
+    refresh: () => call<TokenResponse>("/api/auth/refresh"),
+    logout: () => call<void>("/api/auth/logout"),
+  };
+}
+
+export function createClient(token: string | TokenSource | undefined, fetchImpl: Fetch = (u, i) => fetch(u, i)) {
+  const source: TokenSource | undefined = typeof token === "string" ? { current: () => token, refresh: async () => undefined } : token;
+  const send = (path: string, init: RequestInit, bearer: string | undefined) => {
     const headers = new Headers(init.headers);
-    if (token) headers.set("Authorization", `Bearer ${token}`);
+    if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
     return fetchImpl(path, { ...init, headers, credentials: "omit", cache: "no-store" });
+  };
+  /** access token 过期时静默刷新一次再重发；刷新失败就把 401 交给调用方。 */
+  const raw = async (path: string, init: RequestInit = {}) => {
+    const res = await send(path, init, source?.current());
+    if (res.status !== 401 || !source) return res;
+    const next = await source.refresh();
+    return next ? send(path, init, next) : res;
   };
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
