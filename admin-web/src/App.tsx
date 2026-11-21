@@ -2,7 +2,7 @@ import { App as AntApp, Breadcrumb, Button, ConfigProvider, Layout, Menu, Spin }
 import { Suspense, useState, type ReactNode } from "react";
 import { ConnectControl, SessionProvider, useSession } from "./session";
 import { demoLoginAllowed, LoginPage } from "./features/login/LoginPage";
-import { NAV, NEEDS_KB, type NavKey } from "./nav";
+import { NAV, NEEDS_KB, visibleNav, type NavKey } from "./nav";
 import { LAZY_ROUTES } from "./routes";
 import { NoKnowledgeBase } from "./NoKnowledgeBase";
 
@@ -85,7 +85,10 @@ export function DevBanner({ connected }: { connected: boolean }) {
 /** 管理端外壳：侧栏通高，内容区单独滚动；页面按路由懒加载。 */
 function Shell({ onLogin }: { onLogin: () => void }) {
   const session = useSession();
-  const [active, setActive] = useState<NavKey>("overview");
+  const [chosen, setActive] = useState<NavKey>("overview");
+  const nav = visibleNav(session.client ? session.account?.roles ?? [] : undefined);
+  // 换了账号或角色被降低后，当前页面不在菜单里时回到总览。
+  const active: NavKey = nav.some((n) => n.key === chosen) ? chosen : "overview";
   const kbName = session.knowledgeBases.find((k) => k.id === session.kbId)?.name;
   const current = NAV.find((n) => n.key === active) ?? NAV[0];
   const Page = LAZY_ROUTES[active];
@@ -107,7 +110,7 @@ function Shell({ onLogin }: { onLogin: () => void }) {
           className="shell-menu"
           selectedKeys={[active]}
           onClick={({ key }) => setActive(key as NavKey)}
-          items={NAV.map((n) => ({ key: n.key, label: n.label }))}
+          items={nav.map((n) => ({ key: n.key, label: n.label }))}
         />
         <div className="shell-user">
           <div>

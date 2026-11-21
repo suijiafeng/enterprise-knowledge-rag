@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { DevBanner } from "./App";
-import { NAV } from "./nav";
+import { NAV, visibleNav } from "./nav";
 import { LAZY_ROUTES } from "./routes";
 
 afterEach(cleanup);
@@ -20,5 +20,15 @@ describe("console shell", () => {
 
   it("lazy-loads every navigation entry as its own route", () => {
     expect(Object.keys(LAZY_ROUTES).sort()).toEqual(NAV.map((n) => n.key).sort());
+  });
+
+  it("trims the menu by role and shows everything in sample mode", () => {
+    const keys = (roles?: string[]) => visibleNav(roles).map((n) => n.key);
+    expect(keys(undefined)).toEqual(NAV.map((n) => n.key));
+    expect(keys(["EMPLOYEE"])).toEqual(["overview", "qa", "records"]);
+    expect(keys(["KB_OPERATOR"])).toEqual(["overview", "documents", "qa", "records", "debug", "evaluation", "integration", "settings"]);
+    expect(keys(["IT_ADMIN"])).toEqual(["overview", "qa", "records", "integration", "users", "settings"]);
+    expect(keys(["IT_ADMIN", "KB_OPERATOR"])).toEqual(NAV.map((n) => n.key));
+    expect(keys([])).toEqual([]);
   });
 });
