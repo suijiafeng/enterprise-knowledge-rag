@@ -28,6 +28,10 @@ public class ApiExceptionHandler {
 
   @ExceptionHandler(ApiException.class)
   ResponseEntity<ApiError> api(ApiException e, HttpServletRequest req) {
+    if (e instanceof RateLimitedException limited) {
+      return ResponseEntity.status(e.status()).header("Retry-After", Long.toString(limited.retryAfterSeconds()))
+          .body(new ApiError(e.code(), e.getMessage(), RequestIdFilter.of(req)));
+    }
     return body(e.status(), e.code(), e.getMessage(), req);
   }
 
