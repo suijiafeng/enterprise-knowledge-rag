@@ -1,6 +1,6 @@
 # 知库管理端
 
-React + TypeScript strict + Ant Design + Vite。打开后先进入登录页：用户名 + 密码登录（企业 SSO 未接入），也可「以示例数据浏览」。登录失败、被限流（按钮按 `Retry-After` 倒计时）和会话失效都用顶部 toast 提示；动态背景是纯 CSS、单独懒加载，系统开启「减少动态效果」时定格。演示账号只在服务端 `dev` 配置返回 `demoLogin`、且是开发构建（`npm run dev`）时显示；生产构建默认不显示，本地预览需要时构建前设 `VITE_ZHIKU_DEMO_LOGIN=true`。登录并选中知识库后，总览、文档、问答、检索调试、评测、问答记录、用户与权限、系统设置等页面都使用真实接口；已登录但没有可访问的知识库时显示空态，不退回示例数据。access token 只保存在页面内存，刷新页面时用 HttpOnly 刷新 cookie 恢复登录。
+React + TypeScript strict + Ant Design + Vite。打开后先进入登录页：用户名 + 密码登录（企业 SSO 未接入），也可「以示例数据浏览」。登录失败、被限流（按钮按 `Retry-After` 倒计时）和会话失效（区分账号停用、被撤销、过期）都用顶部 toast 提示，欢迎语用账号显示名；动态背景是纯 CSS、单独懒加载，系统开启「减少动态效果」时定格。演示账号只在服务端 `dev` 配置返回 `demoLogin`、且是开发构建（`npm run dev`）时显示；生产构建默认不显示，本地预览需要时构建前设 `VITE_ZHIKU_DEMO_LOGIN=true`。登录并选中知识库后，总览、文档、问答、检索调试、评测、问答记录、用户与权限、系统设置等页面都使用真实接口；已登录但没有可访问的知识库时显示空态，不退回示例数据。侧栏菜单按账号角色精简（只是少显示无权限的页面，权限仍由服务端判定），示例模式显示全部。IT 管理员在「用户与权限 → 账号」开通和管理账号；临时密码登录后会弹出不能关闭的改密框，平时在右上角账号菜单里改密。access token 只保存在页面内存，刷新页面时用 HttpOnly 刷新 cookie 恢复登录。
 
 ## 本地运行
 
@@ -13,6 +13,8 @@ npm run dev
 ```
 
 打开 Vite 输出的本地地址（默认 http://127.0.0.1:5173）。开发服务器把 /api 代理到 `ZHIKU_DEV_PROXY`，默认 `http://127.0.0.1:8080`。变量可以写在仓库根 `.env`、`admin-web/.env`，或在启动前导出。服务端改了 `--server.port` / `SERVER_PORT` 时，把代理改成同一个地址。服务端无需 CORS。不启动服务端时页面以示例模式运行。
+
+容器镜像：`docker build -t zhiku-admin-web .`，nginx 托管构建产物并把 `/api` 反代到 `server:8080`，响应头与 `vite.config.ts` 的 `SECURITY_HEADERS` 一致（见 `nginx.conf`）。构建参数 `VITE_ZHIKU_DEMO_LOGIN=true` 才会显示演示账号入口。通常用仓库根的 `docker compose up -d --build` 一起启动。
 
 ```sh
 npm run typecheck
