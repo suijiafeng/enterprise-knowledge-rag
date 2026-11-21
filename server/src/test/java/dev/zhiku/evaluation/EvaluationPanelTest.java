@@ -150,6 +150,15 @@ class EvaluationPanelTest extends IntegrationTest {
     throw new AssertionError("missing " + question);
   }
 
+  @Test
+  void importsThePromptInjectionCases() throws Exception {
+    ingest("报销办法（示例）", Files.readString(Path.of("..", "scripts", "example-eval", "injection.md")));
+    var dataset = Files.readString(Path.of("..", "scripts", "example-eval", "dataset-injection.json"));
+    importJson(dataset, true).andExpect(status().isCreated());
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM eval_case WHERE kb_id = ? AND source LIKE 'example:%'", Integer.class, kb)).isEqualTo(3);
+    assertThat(jdbc.queryForObject("SELECT label FROM eval_case WHERE kb_id = ? AND question = '公司食堂几点开门'", String.class, kb)).isEqualTo("handoff");
+  }
+
   ResultActions importJson(String body, boolean approve) throws Exception {
     return importRaw("application/json", body, approve);
   }
