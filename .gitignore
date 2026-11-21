@@ -11,3 +11,7 @@
 PRD.docx
 PRD.md
 verification.md
+
+# Playwright
+e2e/test-results/
+e2e/playwright-report/
