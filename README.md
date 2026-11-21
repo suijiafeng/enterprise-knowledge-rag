@@ -2,7 +2,7 @@
 
 面向企业内部制度的检索增强问答（RAG）。员工就制度提问，回答只依据有权访问且当前生效的资料，并给出来源。
 
-开发中，未达到生产可用。身份是本地签发的开发令牌，模型用本机 Ollama。仓库里只有虚构示例，不调用付费模型。
+开发中，未达到生产可用。登录是本地账号（用户名密码），尚未接入企业 SSO；模型用本机 Ollama。仓库里只有虚构示例，不调用付费模型。
 
 ## 界面
 
@@ -34,6 +34,7 @@
 ## 已实现
 
 - 知识库授权与角色：每次请求从数据库重读授权，未授权内容不会进入模型、排序或响应。
+- 登录与安全：用户名密码登录（bcrypt），短期 access token + 轮换的 HttpOnly 刷新 cookie；令牌绑定会话，退出、停用、踢下线和降权立即生效。登录、问答、上传、评测限流；API 带安全响应头；`/api/health` 检查数据库；缺少密钥或 prod 下开着开发选项时拒绝启动。
 - 文档版本：审批、发布、撤回和生效区间与索引状态分开。撤回或删除后，检索、引用和依赖它的历史回答立即不可见。
 - 摄取：Markdown / TXT 上传校验，数据库租约队列切块并向量化。
 - 问答：SSE 流式回答。追问先改写成独立问题再检索；相关性不够时直接回答"资料不足"，不调用模型。资料中的指令式句子会被屏蔽。引用核对编号、版本和授权，再做一次词面支撑检查；来源面板只列回答实际引用的来源。断线后按请求编号取回原结果，不重复生成。
@@ -42,7 +43,7 @@
 - 可嵌入问答挂件：宿主后端换取短期令牌，浏览器不保存长期凭据。
 - 管理后台：一键「上传文档」弹窗（选文件 → 新建或新版本 → 可直接批准发布）；授权按姓名 / 邮箱 / 部门搜索本地用户目录镜像（目录外的用户仍可按 ID 授权）；问答输入框固定在底部；路由按页懒加载。
 
-尚未做生产 IdP、对话摘要、引用的语义验证（目前只有词面检查）、交叉编码器重排，以及长期 API Key。
+尚未做企业 SSO（OIDC）、对话摘要、引用的语义验证（目前只有词面检查）、交叉编码器重排，以及长期 API Key。
 
 ## 技术栈
 
@@ -76,18 +77,27 @@ cd server && mvn spring-boot:run
 
 从 `server/` 启动时会读取仓库根目录的 `.env`。默认监听 `127.0.0.1:8080`。改端口用 `SERVER_PORT=8090`，或 `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8090`。
 
-写入虚构知识库并签发开发令牌（没有默认密码）：
+本地开发用 `dev` 配置启动（`SPRING_PROFILES_ACTIVE=dev`），它会写入三个演示账号，并允许命令行脚本使用开发令牌：
 
 ```bash
+cd server && SPRING_PROFILES_ACTIVE=dev mvn spring-boot:run
 docker compose exec -T postgres psql -U zhiku_local -d zhiku < scripts/dev-seed.sql
-node scripts/dev-token.mjs --user 00000000-0000-4000-8000-0000000000a1 --enterprise 00000000-0000-4000-8000-0000000000e1 --roles KB_OPERATOR,EMPLOYEE
-```
-
-```bash
 cd admin-web && npm ci && npm run dev
 ```
 
-把令牌贴进登录页。管理端把 `/api` 代理到 `ZHIKU_DEV_PROXY`，默认 `http://127.0.0.1:8080`。
+打开管理端，用演示账号登录（登录页可以点选填入）：
+
+| 用户名 | 角色 | 说明 |
+| --- | --- | --- |
+| `admin` | IT 管理员 + 知识库运营 + 员工 | 管授权、看全部记录 |
+| `operator` | 知识库运营 + 员工 | 上传、发布、评测 |
+| `employee` | 员工 | 只能问答；种子数据里没有授权，用来演示授权 |
+
+密码默认是 `zhiku-demo-2026`，可以用 `ZHIKU_DEMO_PASSWORD` 改。演示账号只在 `dev` 配置下写入；`prod` 配置下打开会拒绝启动。
+
+登录后 access token 只在页面内存里，15 分钟有效；刷新令牌是 HttpOnly cookie，页面刷新后自动恢复登录，点「退出登录」立即作废。管理端把 `/api` 代理到 `ZHIKU_DEV_PROXY`，默认 `http://127.0.0.1:8080`。
+
+`scripts/eval-baseline.mjs` 等命令行脚本仍用 `node scripts/dev-token.mjs …` 签发的开发令牌，这类令牌只在 `dev` 配置下有效。
 
 问答和向量化默认关闭。在 `.env` 设置 `ZHIKU_CHAT_PROVIDER=ollama` 和 `ZHIKU_EMBEDDING_PROVIDER=ollama` 后重启服务。未配置 embedding 时，文档会排队并说明原因，不会被标成可检索。
 
