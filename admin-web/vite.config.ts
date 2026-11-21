@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { resolve } from "node:path";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
@@ -23,5 +24,11 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: { proxy: { "/api": target } },
+    test: {
+      // happy-dom 在每个测试文件结束时销毁 window；React 若还有排队的 passive effect，会在销毁之后读取 window.event
+      // 并抛出 “window is not defined”。这发生在全部断言结束之后，与被测行为无关；只忽略这一种，其余未处理错误照常让测试失败。
+      onUnhandledError: (error) => !(error.name === "ReferenceError" && error.message === "window is not defined"
+        && String(error.stack ?? "").includes("react-dom")),
+    },
   };
 });
