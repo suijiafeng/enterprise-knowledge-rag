@@ -21,9 +21,11 @@ public class JwtAccessScopeResolver implements AccessScopeResolver {
   public static final String WIDGET = "widget";
 
   private final GrantLookup grants;
+  private final AccountSessions sessions;
 
-  public JwtAccessScopeResolver(GrantLookup grants) {
+  public JwtAccessScopeResolver(GrantLookup grants, AccountSessions sessions) {
     this.grants = grants;
+    this.sessions = sessions;
   }
 
   @Override
@@ -37,12 +39,19 @@ public class JwtAccessScopeResolver implements AccessScopeResolver {
     if (user == null || enterprise == null) {
       return Optional.empty();
     }
+    var roles = roles(jwt.getClaimAsStringList("roles"));
+    if (jwt.hasClaim(AccountSessions.SESSION)) {
+      // 绑定会话的令牌：角色取令牌与数据库的交集，降权立即生效；会话失效或企业不符则没有任何范围。
+      var active = sessions.check(jwt);
+      if (active.isEmpty() || !active.get().enterpriseId().equals(enterprise)) return Optional.empty();
+      roles.retainAll(active.get().roles());
+    }
     var granted = new java.util.HashSet<>(grants.grantedKnowledgeBases(enterprise, user));
     if (WIDGET.equals(jwt.getClaimAsString(TOKEN_USE)) || jwt.hasClaim(KB_SCOPE)) {
       var limit = jwt.getClaimAsStringList(KB_SCOPE);
       granted.removeIf(kb -> limit == null || !limit.contains(kb.toString()));
     }
-    return Optional.of(new AccessScope(enterprise, user, granted, roles(jwt.getClaimAsStringList("roles"))));
+    return Optional.of(new AccessScope(enterprise, user, granted, roles));
   }
 
   private static UUID uuid(String value) {

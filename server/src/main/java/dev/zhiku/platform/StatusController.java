@@ -18,8 +18,15 @@ public class StatusController {
   private final BusinessSettings business;
   private final IngestionSettings ingestion;
 
+  private final boolean demo;
+  private final String demoPassword;
+
   public StatusController(ObjectProvider<ChatModel> chat, ObjectProvider<EmbeddingProvider> embeddings,
-      BusinessSettings business, IngestionSettings ingestion) {
+      BusinessSettings business, IngestionSettings ingestion,
+      @org.springframework.beans.factory.annotation.Value("${zhiku.demo.accounts:false}") boolean demo,
+      @org.springframework.beans.factory.annotation.Value("${zhiku.demo.password:}") String demoPassword) {
+    this.demo = demo;
+    this.demoPassword = demoPassword;
     this.chat = chat;
     this.embeddings = embeddings;
     this.business = business;
@@ -41,6 +48,8 @@ public class StatusController {
     body.put("businessTimeZone", business.timeZone().getId());
     body.put("maxUploadBytes", ingestion.maxBytes());
     body.put("uploadFormats", java.util.List.of(".md", ".markdown", ".txt"));
+    // 只有 dev 配置写入了演示账号时才公开它们的登录信息，方便本地体验；生产永远为 null。
+    body.put("demoLogin", demo ? Map.of("usernames", java.util.List.of("admin", "operator", "employee"), "password", demoPassword) : null);
     return body;
   }
 }

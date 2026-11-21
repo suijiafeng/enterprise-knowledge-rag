@@ -57,6 +57,7 @@ public final class EvalDashboardDemo {
             "zhiku.retention.enabled=false",
             "zhiku.widget.allowed-origins=",
             "zhiku.auth.jwt-secret=" + secret,
+            "zhiku.auth.dev-tokens=true",
             "zhiku.auth.issuer=" + TestJwt.ISSUER,
             "zhiku.auth.audience=" + TestJwt.AUDIENCE,
             "spring.datasource.url=" + env("ZHIKU_DB_URL", "jdbc:postgresql://127.0.0.1:5432/zhiku"),
