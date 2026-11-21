@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ApiError, type ApiClient, type DocumentInfo } from "../../api/client";
 
 const NEW = "__new__";
-const ACCEPT = ".md,.markdown,.txt";
+export const ACCEPT = ".md,.markdown,.txt,.pdf,.docx";
 
 export interface UploadValues {
   target: string;
@@ -16,7 +16,7 @@ export interface UploadValues {
 }
 
 /** 文件名去掉扩展名，作为新文档的默认标题。 */
-export const titleFromFile = (name: string) => name.replace(/\.(md|markdown|txt)$/i, "").trim().slice(0, 200);
+export const titleFromFile = (name: string) => name.replace(/\.(md|markdown|txt|pdf|docx)$/i, "").trim().slice(0, 200);
 
 /** 已有文档的下一个版本号：v{n+1}。 */
 export const nextVersionLabel = (doc: DocumentInfo | undefined) => `v${(doc?.versions.length ?? 0) + 1}`;
@@ -24,11 +24,13 @@ export const nextVersionLabel = (doc: DocumentInfo | undefined) => `v${(doc?.ver
 const failure = (e: unknown) => (e instanceof ApiError ? `${e.message}（${e.code}${e.requestId ? ` · ${e.requestId}` : ""}）` : "请求失败");
 
 /**
- * 上传文档：一步完成「新建文档（或选已有文档）→ 新建版本 → 上传内容 →（可选）批准并发布」。
+ * 上传文档：一步完成「新建文档（或选已有文档）→ 新建版本 → 上传内容 →（可选）发布」。
+ * 部署不要求审批时（默认）发布即由发布人批准；要求审批时只上传，等有权限的人批准后再发布。
  * 页脚按钮在右下角，关闭图标在右上角；失败时停在弹窗内说明是哪一步失败。
  */
-export function UploadDocumentModal({ open, client, kbId, docs, presetDocId, onClose, onUploaded }: {
+export function UploadDocumentModal({ open, client, kbId, docs, presetDocId, requireApproval = false, onClose, onUploaded }: {
   open: boolean;
+  requireApproval?: boolean;
   client: ApiClient;
   kbId: string;
   docs: DocumentInfo[];
@@ -70,13 +72,12 @@ export function UploadDocumentModal({ open, client, kbId, docs, presetDocId, onC
         : { versionLabel: values.versionLabel.trim(), effectiveFrom: from });
       step = "上传内容";
       await client.upload(kbId, docId, version.id, file);
-      if (values.publish) {
-        step = "批准";
-        await client.transition(kbId, docId, version.id, "approve");
+      const publish = !requireApproval && values.publish !== false;
+      if (publish) {
         step = "发布";
         await client.transition(kbId, docId, version.id, "publish");
       }
-      onUploaded(title, values.publish);
+      onUploaded(title, publish);
     } catch (e) {
       setError(`${step}失败：${failure(e)}`);
     } finally {
@@ -84,8 +85,9 @@ export function UploadDocumentModal({ open, client, kbId, docs, presetDocId, onC
     }
   };
 
+  const publish = Form.useWatch("publish", form) ?? true;
   return (
-    <Modal open={open} title="上传文档" okText="上传" cancelText="取消" onOk={() => void submit()} onCancel={onClose}
+    <Modal open={open} title="上传文档" okText={publish && !requireApproval ? "上传并发布" : "上传"} cancelText="取消" onOk={() => void submit()} onCancel={onClose}
       confirmLoading={busy} okButtonProps={{ disabled: !file }} destroyOnHidden width={520}>
       {error && <Alert type="error" showIcon title={error} className="modal-alert" />}
       <Form form={form} layout="vertical" requiredMark={false} className="upload-form"
@@ -100,7 +102,7 @@ export function UploadDocumentModal({ open, client, kbId, docs, presetDocId, onC
             }}
             onRemove={() => { setFile(undefined); return true; }}>
             <p className="upload-hint-main">点击或拖入文件</p>
-            <p className="upload-hint">.md / .markdown / .txt，UTF-8</p>
+            <p className="upload-hint">.md / .txt（UTF-8）· .pdf（需有文字层）· .docx</p>
           </Upload.Dragger>
         </Form.Item>
         <Form.Item name="target" label="归属">
@@ -123,9 +125,13 @@ export function UploadDocumentModal({ open, client, kbId, docs, presetDocId, onC
             <DatePicker className="full" placeholder="长期有效" />
           </Form.Item>
         </div>
-        <Form.Item name="publish" valuePropName="checked" className="form-last">
-          <Checkbox>上传后直接批准并发布（索引就绪后即可用于问答）</Checkbox>
-        </Form.Item>
+        {requireApproval ? (
+          <Alert type="info" showIcon className="form-last" title="本部署要求审批：上传后需由有权限的人在文档列表里批准，再发布。" />
+        ) : (
+          <Form.Item name="publish" valuePropName="checked" className="form-last">
+            <Checkbox>上传后直接发布（索引就绪后即可用于问答）</Checkbox>
+          </Form.Item>
+        )}
       </Form>
     </Modal>
   );

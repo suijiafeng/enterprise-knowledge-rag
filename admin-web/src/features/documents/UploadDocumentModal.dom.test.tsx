@@ -33,24 +33,46 @@ describe("upload document modal", () => {
   it("derives the title and next version label", () => {
     expect(titleFromFile("差旅办法.md")).toBe("差旅办法");
     expect(titleFromFile("notes.TXT")).toBe("notes");
+    expect(titleFromFile("员工手册.pdf")).toBe("员工手册");
+    expect(titleFromFile("报销制度.DOCX")).toBe("报销制度");
     expect(nextVersionLabel(undefined)).toBe("v1");
     expect(nextVersionLabel(existing)).toBe("v2");
   });
 
-  it("creates the document and version, uploads, then approves and publishes in one step", async () => {
+  it("creates the document and version, uploads, then publishes in one step", async () => {
     const client = clientWith();
     const onUploaded = vi.fn();
     render(<UploadDocumentModal open client={client} kbId="kb" docs={[]} onClose={() => {}} onUploaded={onUploaded} />);
-    expect(screen.getByRole("button", { name: /上\s*传/ }).hasAttribute("disabled")).toBe(true);
+    const ok = () => screen.getByRole("button", { name: /上\s*传\s*并\s*发\s*布/ });
+    expect(ok().hasAttribute("disabled")).toBe(true);
     const file = pick("差旅办法.md");
-    await waitFor(() => expect(screen.getByRole("button", { name: /上\s*传/ }).hasAttribute("disabled")).toBe(false));
-    fireEvent.click(screen.getByRole("button", { name: /上\s*传/ }));
+    await waitFor(() => expect(ok().hasAttribute("disabled")).toBe(false));
+    fireEvent.click(ok());
     await waitFor(() => expect(onUploaded).toHaveBeenCalledWith("差旅办法", true));
     expect(client.createDocument).toHaveBeenCalledWith("kb", "差旅办法");
     expect(client.createVersion).toHaveBeenCalledWith("kb", "new-doc", expect.objectContaining({ versionLabel: "v1" }));
     expect(client.upload).toHaveBeenCalledWith("kb", "new-doc", "new-version", file);
-    expect(client.transition).toHaveBeenNthCalledWith(1, "kb", "new-doc", "new-version", "approve");
-    expect(client.transition).toHaveBeenNthCalledWith(2, "kb", "new-doc", "new-version", "publish");
+    expect(client.transition).toHaveBeenCalledTimes(1);
+    expect(client.transition).toHaveBeenCalledWith("kb", "new-doc", "new-version", "publish");
+  });
+
+  it("only uploads when the deployment requires a separate approval", async () => {
+    const client = clientWith();
+    const onUploaded = vi.fn();
+    render(<UploadDocumentModal open requireApproval client={client} kbId="kb" docs={[]} onClose={() => {}} onUploaded={onUploaded} />);
+    expect(screen.getByText(/本部署要求审批/)).toBeTruthy();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    pick("员工手册.pdf");
+    const ok = () => screen.getByRole("button", { name: /^上\s*传$/ });
+    await waitFor(() => expect(ok().hasAttribute("disabled")).toBe(false));
+    fireEvent.click(ok());
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledWith("员工手册", false));
+    expect(client.transition).not.toHaveBeenCalled();
+  });
+
+  it("accepts pdf and docx files", () => {
+    render(<UploadDocumentModal open client={clientWith()} kbId="kb" docs={[]} onClose={() => {}} onUploaded={() => {}} />);
+    expect(document.querySelector(".ant-upload input[type=file]")?.getAttribute("accept")).toBe(".md,.markdown,.txt,.pdf,.docx");
   });
 
   it("adds a version to an existing document and says which step failed", async () => {

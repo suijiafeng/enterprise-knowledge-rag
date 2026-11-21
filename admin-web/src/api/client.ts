@@ -15,6 +15,8 @@ export interface Status {
   businessTimeZone: string;
   maxUploadBytes: number;
   uploadFormats: string[];
+  /** 发布前是否必须单独批准；缺省（旧服务端）按 false 处理。 */
+  requireApproval?: boolean;
   /** 仅 dev 配置写入演示账号时存在。 */
   demoLogin?: { usernames: string[]; password: string } | null;
 }

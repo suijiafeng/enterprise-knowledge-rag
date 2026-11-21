@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, LoadingList } from "../../components/StateViews
 import { formatInstant } from "../../format";
 import { usePollingLoad } from "../../hooks/usePollingLoad";
 import { ChunkEditor } from "./ChunkEditor";
-import { UploadDocumentModal } from "./UploadDocumentModal";
+import { ACCEPT, UploadDocumentModal } from "./UploadDocumentModal";
 import { useNotice } from "../../notice";
 
 export const indexState = (s: VersionInfo["indexStatus"]): IndexStatus =>
@@ -58,6 +58,8 @@ const failure = (e: unknown) => (e instanceof ApiError ? `${e.message}（${e.cod
 /** 来自服务端的所选知识库文档：业务状态与索引状态分开显示。 */
 export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbId: string; status: Status | undefined }) {
   const zone = status?.businessTimeZone ?? "Asia/Shanghai";
+  // 默认不要求审批：只显示「发布」；部署打开审批时才显示「批准 → 发布」两步。
+  const requireApproval = status?.requireApproval ?? false;
   const [docs, setDocs] = useState<DocumentInfo[]>();
   const [loadError, setLoadError] = useState<string>();
   const [upload, setUpload] = useState<{ docId?: string }>();
@@ -127,19 +129,22 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
       render: (_: unknown, v: VersionInfo) => (
         <Space wrap size={4}>
           {v.indexStatus === "pending" && (
-            <Upload accept=".md,.markdown,.txt" showUploadList={false} beforeUpload={(file) => {
+            <Upload accept={ACCEPT} showUploadList={false} beforeUpload={(file) => {
               void act(() => client.upload(kbId, doc.id, v.id, file), "已上传，正在建立索引", true);
               return false;
             }}>
               <Button size="small">上传内容</Button>
             </Upload>
           )}
-          <Button size="small" disabled={v.approved || v.withdrawn} onClick={() => act(() => client.transition(kbId, doc.id, v.id, "approve"), "已批准")}>批准</Button>
-          <Button size="small" type={v.approved && !v.published && !v.withdrawn ? "primary" : "default"} disabled={!v.approved || v.published || v.withdrawn}
+          {requireApproval && (
+            <Button size="small" disabled={v.approved || v.withdrawn} onClick={() => act(() => client.transition(kbId, doc.id, v.id, "approve"), "已批准")}>批准</Button>
+          )}
+          <Button size="small" type={(v.approved || !requireApproval) && !v.published && !v.withdrawn ? "primary" : "default"}
+            disabled={(requireApproval && !v.approved) || v.published || v.withdrawn}
             onClick={() => act(() => client.transition(kbId, doc.id, v.id, "publish"), "已发布")}>发布</Button>
           <Popconfirm
             title="撤回该版本？"
-            description="立即停止检索、引用与问答，依赖它的历史回答将被隐藏；撤回后不能再批准或发布该版本。"
+            description="立即停止检索、引用与问答，依赖它的历史回答将被隐藏；撤回后不能再发布该版本。"
             okText="确认撤回"
             cancelText="取消"
             okButtonProps={{ danger: true }}
@@ -167,11 +172,11 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
         <Button type="primary" onClick={() => setUpload({})}>上传文档</Button>
       </div>
       <UploadDocumentModal open={upload !== undefined} client={client} kbId={kbId} docs={docs ?? []} presetDocId={upload?.docId}
-        onClose={() => setUpload(undefined)}
+        requireApproval={requireApproval} onClose={() => setUpload(undefined)}
         onUploaded={(title, published) => {
           setUpload(undefined);
           setWatch(WATCH_POLLS);
-          notice.success(published ? `《${title}》已上传并发布，正在建立索引` : `《${title}》已上传，批准并发布后可用于问答`);
+          notice.success(published ? `《${title}》已上传并发布，正在建立索引` : (requireApproval ? `《${title}》已上传，批准并发布后可用于问答` : `《${title}》已上传，发布后可用于问答`));
           void load();
         }} />
       <Drawer open={editing !== undefined} title={editing ? `编辑切块 · ${editing.title}` : "编辑切块"} size={720}
@@ -185,7 +190,7 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
         {docs === undefined && !loadError && <div className="state-pad"><LoadingList /></div>}
         {docs === undefined && loadError && <div className="state-pad"><ErrorState code="LOAD_FAILED" message={`文档列表读取失败：${loadError}`} onRetry={() => void load()} /></div>}
         {docs?.length === 0 && (
-          <EmptyState icon="doc" title="暂无文档" description="点右上角「上传文档」选择 .md / .txt；版本需批准、发布、处于有效期且索引就绪后才能用于问答。"
+          <EmptyState icon="doc" title="暂无文档" description={`点右上角「上传文档」选择 .md / .txt / .pdf / .docx；版本需${requireApproval ? "批准、" : ""}发布、处于有效期且索引就绪后才能用于问答。`}
             action={<Button type="primary" onClick={() => setUpload({})}>上传文档</Button>} />
         )}
         {docs && docs.length > 0 && <Table<DocumentInfo>
