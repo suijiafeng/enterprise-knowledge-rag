@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { SessionProvider, useSession } from "./session";
@@ -30,7 +31,10 @@ function server(opts: { refreshOk: boolean }) {
       const t = token(++issued); valid = t.accessToken; return json(t);
     }
     if (url === "/api/auth/login") {
-      const body = JSON.parse(String(init.body)) as { password: string };
+      const body = JSON.parse(String(init.body)) as { username: string; password: string };
+      if (body.username === "limited") {
+        return new Response(JSON.stringify({ code: "RATE_LIMITED", message: "x" }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "42" } });
+      }
       if (body.password !== "right") return json({ code: "INVALID_CREDENTIALS", message: "x" }, 401);
       refreshOk = true;
       const t = token(++issued); valid = t.accessToken; return json(t);
@@ -41,17 +45,22 @@ function server(opts: { refreshOk: boolean }) {
     if (url === "/api/knowledge-bases") return json([{ id: "kb1", name: "示例库" }]);
     return json({});
   };
-  return { calls, fetchImpl, expire: () => { valid = "rotated-away"; } };
+  return { calls, fetchImpl, expire: () => { valid = "rotated-away"; }, revoke: () => { valid = "revoked"; refreshOk = false; } };
 }
 
 function Probe() {
   const s = useSession();
+  const [failure, setFailure] = useState("");
+  const attempt = (u: string, p: string) => void s.login(u, p).then((f) => setFailure(f ? `${f.message}|${f.retryAfter ?? ""}` : "ok"));
   return (
     <div>
+      <span data-testid="failure">{failure}</span>
+      <span data-testid="lost">{String(s.sessionLost)}</span>
+      <button onClick={() => attempt("limited", "x")}>limited</button>
       <span data-testid="who">{s.restoring ? "restoring" : s.account?.displayName ?? "anonymous"}</span>
       <span data-testid="kbs">{s.knowledgeBases.map((k) => k.name).join(",")}</span>
-      <button onClick={() => void s.login("employee", "wrong")}>bad</button>
-      <button onClick={() => void s.login(" employee ", "right")}>good</button>
+      <button onClick={() => attempt("employee", "wrong")}>bad</button>
+      <button onClick={() => attempt(" employee ", "right")}>good</button>
       <button onClick={() => s.logout()}>out</button>
       <button onClick={() => void s.client?.knowledgeBases().then(() => undefined, () => undefined)}>reload</button>
     </div>
@@ -128,6 +137,31 @@ describe("session", () => {
     fireEvent.change(await screen.findByLabelText("用户名"), { target: { value: "employee" } });
     fireEvent.change(screen.getByLabelText("密码"), { target: { value: "wrong" } });
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
-    expect((await screen.findByRole("alert")).textContent).toBe("用户名或密码不正确");
+    expect(await screen.findByText("用户名或密码不正确")).toBeTruthy();
+    expect(document.querySelector(".ant-message")?.textContent).toContain("用户名或密码不正确");
+  });
+
+  it("passes the server's Retry-After through when login is rate limited", async () => {
+    const api = server({ refreshOk: false });
+    render(<SessionProvider fetchImpl={api.fetchImpl}><Probe /></SessionProvider>);
+    await waitFor(() => expect(screen.getByTestId("who").textContent).toBe("anonymous"));
+    fireEvent.click(screen.getByText("limited"));
+    await waitFor(() => expect(screen.getByTestId("failure").textContent).toBe("尝试次数过多，请稍后再试|42"));
+    fireEvent.click(screen.getByText("bad"));
+    await waitFor(() => expect(screen.getByTestId("failure").textContent).toBe("用户名或密码不正确|"));
+  });
+
+  it("remembers that a live session was lost, but not an explicit logout", async () => {
+    const api = server({ refreshOk: true });
+    render(<SessionProvider fetchImpl={api.fetchImpl}><Probe /></SessionProvider>);
+    await waitFor(() => expect(screen.getByTestId("kbs").textContent).toBe("示例库"));
+    api.revoke();
+    fireEvent.click(screen.getByText("reload"));
+    await waitFor(() => expect(screen.getByTestId("who").textContent).toBe("anonymous"));
+    expect(screen.getByTestId("lost").textContent).toBe("true");
+    fireEvent.click(screen.getByText("good"));
+    await waitFor(() => expect(screen.getByTestId("lost").textContent).toBe("false"));
+    fireEvent.click(screen.getByText("out"));
+    expect(screen.getByTestId("lost").textContent).toBe("false");
   });
 });

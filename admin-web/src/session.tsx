@@ -12,13 +12,23 @@ export interface Session {
   setKbId: (id: string) => void;
   status: Status | undefined;
   statusError: string | undefined;
-  login: (username: string, password: string) => Promise<string | undefined>;
+  login: (username: string, password: string) => Promise<LoginFailure | undefined>;
   logout: () => void;
+  /** 已登录的会话续期失败（被撤销、过期或在别处退出）后回到登录页时为 true，用来提示一次原因。 */
+  sessionLost: boolean;
+  acknowledgeSessionLost: () => void;
+}
+
+/** 登录失败：给用户看的原因；被限流时带上服务端 Retry-After 的秒数。 */
+export interface LoginFailure {
+  message: string;
+  retryAfter?: number;
 }
 
 const disconnected: Session = {
   client: undefined, account: undefined, restoring: false, knowledgeBases: [], kbId: undefined, setKbId: () => {},
-  status: undefined, statusError: undefined, login: async () => "未初始化", logout: () => {},
+  status: undefined, statusError: undefined, login: async () => ({ message: "未初始化" }), logout: () => {},
+  sessionLost: false, acknowledgeSessionLost: () => {},
 };
 
 const SessionContext = createContext<Session>(disconnected);
@@ -47,6 +57,7 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
   const [kbId, setKbId] = useState<string>();
   const [status, setStatus] = useState<Status>();
   const [statusError, setStatusError] = useState<string>();
+  const [sessionLost, setSessionLost] = useState(false);
   const token = useRef<string | undefined>(undefined);
   const inflight = useRef<Promise<string | undefined> | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -72,7 +83,11 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
 
   /** 同一时间只发一个刷新请求：多个 401 共用结果，避免轮换中的刷新令牌被重放。 */
   const renew = useCallback((): Promise<string | undefined> => {
-    inflight.current ??= auth.refresh().then((res) => { accept(res); return res.accessToken; }, () => { clear(); return undefined; })
+    inflight.current ??= auth.refresh().then((res) => { accept(res); return res.accessToken; }, () => {
+      if (token.current) setSessionLost(true);
+      clear();
+      return undefined;
+    })
       .finally(() => { inflight.current = undefined; });
     return inflight.current;
   }, [auth, accept, clear]);
@@ -103,10 +118,13 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
   const login = useCallback(async (username: string, password: string) => {
     try {
       await start(await auth.login(username.trim(), password));
+      setSessionLost(false);
       return undefined;
     } catch (e) {
       clear();
-      return describe(e);
+      const failure: LoginFailure = { message: describe(e) };
+      if (e instanceof ApiError && e.status === 429) failure.retryAfter = e.retryAfter ?? 30;
+      return failure;
     }
   }, [auth, start, clear]);
 
@@ -115,8 +133,10 @@ export function SessionProvider({ children, fetchImpl, restore = true }: { child
     clear();
   }, [auth, clear]);
 
-  const value = useMemo<Session>(() => ({ client, account, restoring, knowledgeBases, kbId, setKbId, status, statusError, login, logout }),
-    [client, account, restoring, knowledgeBases, kbId, status, statusError, login, logout]);
+  const acknowledgeSessionLost = useCallback(() => setSessionLost(false), []);
+  const value = useMemo<Session>(() => ({
+    client, account, restoring, knowledgeBases, kbId, setKbId, status, statusError, login, logout, sessionLost, acknowledgeSessionLost,
+  }), [client, account, restoring, knowledgeBases, kbId, status, statusError, login, logout, sessionLost, acknowledgeSessionLost]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

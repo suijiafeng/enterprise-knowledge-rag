@@ -1,7 +1,7 @@
 import { App as AntApp, Breadcrumb, Button, ConfigProvider, Layout, Menu, Spin } from "antd";
 import { Suspense, useState } from "react";
 import { ConnectControl, SessionProvider, useSession } from "./session";
-import { LoginPage } from "./features/login/LoginPage";
+import { demoLoginAllowed, LoginPage } from "./features/login/LoginPage";
 import { NAV, NEEDS_KB, type NavKey } from "./nav";
 import { LAZY_ROUTES } from "./routes";
 import { NoKnowledgeBase } from "./NoKnowledgeBase";
@@ -55,7 +55,10 @@ function Entry({ initialMode }: { initialMode: Mode }) {
   const [mode, setMode] = useState<Mode>(initialMode);
   if (!session.client && session.restoring && mode === "login") return <div className="route-loading login-restoring"><Spin /></div>;
   if (!session.client && mode === "login") {
-    return <LoginPage onLogin={session.login} demo={session.status?.demoLogin} onBrowseSamples={() => setMode("sample")} />;
+    return (
+      <LoginPage onLogin={session.login} demo={demoLoginAllowed() ? session.status?.demoLogin : null} onBrowseSamples={() => setMode("sample")}
+        sessionLost={session.sessionLost} onSessionLostShown={session.acknowledgeSessionLost} />
+    );
   }
   return <Shell onLogin={() => setMode("login")} />;
 }
