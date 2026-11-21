@@ -63,6 +63,12 @@ public class KnowledgeBaseService {
   }
 
   @Transactional(readOnly = true)
+  public List<KnowledgeBaseRepository.DirectoryUser> searchUsers(String query, int limit) {
+    if (query != null && query.length() > 100) throw ApiException.unprocessable("query is too long");
+    return repository.searchUsers(requireAdmin().enterpriseId(), query, Math.max(1, Math.min(limit, 50)));
+  }
+
+  @Transactional(readOnly = true)
   public List<KnowledgeBaseRepository.GrantView> grantsOf(UUID kbId) {
     requireAdminOf(kbId);
     return repository.grants(kbId);

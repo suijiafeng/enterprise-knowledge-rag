@@ -34,7 +34,10 @@ public class KnowledgeBaseRepository implements GrantLookup {
 
   public record AdminView(UUID id, String name, int memberCount, java.time.Instant createdAt) {}
 
-  public record GrantView(UUID userId, java.time.Instant grantedAt) {}
+  /** displayName / email / department 来自 directory_user；用户尚未同步到目录时为 null。 */
+  public record GrantView(UUID userId, java.time.Instant grantedAt, String displayName, String email, String department) {}
+
+  public record DirectoryUser(UUID id, String displayName, String email, String department) {}
 
   public List<AdminView> findAllInEnterprise(UUID enterpriseId) {
     return jdbc.query("""
@@ -46,8 +49,28 @@ public class KnowledgeBaseRepository implements GrantLookup {
   }
 
   public List<GrantView> grants(UUID kbId) {
-    return jdbc.query("SELECT user_id, granted_at FROM kb_grant WHERE kb_id = ? ORDER BY granted_at, user_id",
-        (rs, i) -> new GrantView(rs.getObject("user_id", UUID.class), rs.getTimestamp("granted_at").toInstant()), kbId);
+    return jdbc.query("""
+        SELECT g.user_id, g.granted_at, u.display_name, u.email, u.department
+        FROM kb_grant g
+        JOIN knowledge_base kb ON kb.id = g.kb_id
+        LEFT JOIN directory_user u ON u.id = g.user_id AND u.enterprise_id = kb.enterprise_id
+        WHERE g.kb_id = ? ORDER BY g.granted_at, g.user_id
+        """,
+        (rs, i) -> new GrantView(rs.getObject("user_id", UUID.class), rs.getTimestamp("granted_at").toInstant(),
+            rs.getString("display_name"), rs.getString("email"), rs.getString("department")), kbId);
+  }
+
+  /** 同企业目录内按姓名、邮箱、部门或完整用户 ID 搜索；query 为空时按姓名返回前 limit 个。 */
+  public List<DirectoryUser> searchUsers(UUID enterpriseId, String query, int limit) {
+    var q = query == null ? "" : query.strip();
+    var like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+    return jdbc.query("""
+        SELECT id, display_name, email, department FROM directory_user
+        WHERE enterprise_id = ?
+          AND (? = '' OR display_name ILIKE ? OR coalesce(email, '') ILIKE ? OR coalesce(department, '') ILIKE ? OR id::text = lower(?))
+        ORDER BY display_name, id LIMIT ?
+        """, (rs, i) -> new DirectoryUser(rs.getObject("id", UUID.class), rs.getString("display_name"), rs.getString("email"),
+            rs.getString("department")), enterpriseId, q, like, like, like, q, limit);
   }
 
   public Optional<KnowledgeBaseRef> find(UUID id) {
